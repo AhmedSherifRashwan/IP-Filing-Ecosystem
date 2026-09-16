@@ -8,6 +8,7 @@ StopReason must not silently change what `echo $?` says.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -170,8 +171,7 @@ def test_run_stops_at_gate_1_with_exit_10(
     assert "awaiting_decision  gate 1" in out
     assert "how_to_answer:" in out
     assert (
-        "uv run ipfe record-decision --matter demo --gate 1 --decision accept --by operator"
-        in out
+        "uv run ipfe record-decision --matter demo --gate 1 --decision accept --by operator" in out
     )
 
 
@@ -182,16 +182,49 @@ def test_unknown_matter_is_a_precondition_failure(env: Path, replays: Path) -> N
 def test_until_stops_with_exit_12(env: Path, replays: Path) -> None:
     _new_matter()
     _run(replays)
-    main(["record-decision", "--matter", "demo", "--gate", "1", "--decision", "accept",
-          "--by", "ahmed"])
+    main(
+        [
+            "record-decision",
+            "--matter",
+            "demo",
+            "--gate",
+            "1",
+            "--decision",
+            "accept",
+            "--by",
+            "ahmed",
+        ]
+    )
     assert _run(replays) == EXIT["gate"]  # Gate 2
-    main(["record-decision", "--matter", "demo", "--gate", "2", "--decision", "accept",
-          "--by", "ahmed"])
+    main(
+        [
+            "record-decision",
+            "--matter",
+            "demo",
+            "--gate",
+            "2",
+            "--decision",
+            "accept",
+            "--by",
+            "ahmed",
+        ]
+    )
 
     # The review round loops back through Phase 3 and asks for a Gate 2 delta.
     assert _run(replays, "--until", "review") == EXIT["gate"]
-    main(["record-decision", "--matter", "demo", "--gate", "2", "--decision", "accept",
-          "--by", "ahmed"])
+    main(
+        [
+            "record-decision",
+            "--matter",
+            "demo",
+            "--gate",
+            "2",
+            "--decision",
+            "accept",
+            "--by",
+            "ahmed",
+        ]
+    )
     assert _run(replays, "--until", "review") == EXIT["until"]
 
 
@@ -232,9 +265,7 @@ def test_status_without_a_pending_gate_has_no_decision_block(
     assert "awaiting_decision" not in json.loads(capsys.readouterr().out)
 
 
-def test_status_renders_a_human_table(
-    env: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_status_renders_a_human_table(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _new_matter()
     capsys.readouterr()
     main(["status", "--matter", "demo"])
@@ -254,8 +285,17 @@ def test_decisions_are_idempotent(
 ) -> None:
     _new_matter()
     _run(replays)
-    argv = ["record-decision", "--matter", "demo", "--gate", "1", "--decision", "accept",
-            "--by", "ahmed"]
+    argv = [
+        "record-decision",
+        "--matter",
+        "demo",
+        "--gate",
+        "1",
+        "--decision",
+        "accept",
+        "--by",
+        "ahmed",
+    ]
 
     assert main(argv) == EXIT["ok"]
     capsys.readouterr()
@@ -266,11 +306,33 @@ def test_decisions_are_idempotent(
 def test_contradicting_a_decision_exits_2(env: Path, replays: Path) -> None:
     _new_matter()
     _run(replays)
-    main(["record-decision", "--matter", "demo", "--gate", "1", "--decision", "accept",
-          "--by", "ahmed"])
+    main(
+        [
+            "record-decision",
+            "--matter",
+            "demo",
+            "--gate",
+            "1",
+            "--decision",
+            "accept",
+            "--by",
+            "ahmed",
+        ]
+    )
     assert (
-        main(["record-decision", "--matter", "demo", "--gate", "1", "--decision", "reject",
-              "--by", "ahmed"])
+        main(
+            [
+                "record-decision",
+                "--matter",
+                "demo",
+                "--gate",
+                "1",
+                "--decision",
+                "reject",
+                "--by",
+                "ahmed",
+            ]
+        )
         == EXIT["usage"]
     )
 
@@ -278,8 +340,19 @@ def test_contradicting_a_decision_exits_2(env: Path, replays: Path) -> None:
 def test_deciding_a_gate_that_is_not_pending_exits_6(env: Path) -> None:
     _new_matter()
     assert (
-        main(["record-decision", "--matter", "demo", "--gate", "2", "--decision", "accept",
-              "--by", "ahmed"])
+        main(
+            [
+                "record-decision",
+                "--matter",
+                "demo",
+                "--gate",
+                "2",
+                "--decision",
+                "accept",
+                "--by",
+                "ahmed",
+            ]
+        )
         == EXIT["precondition"]
     )
 
@@ -288,8 +361,19 @@ def test_an_agent_may_not_decide_gate_3(env: Path, replays: Path) -> None:
     _new_matter()
     _run(replays)
     assert (
-        main(["record-decision", "--matter", "demo", "--gate", "1", "--decision", "accept",
-              "--by", "ip-orchestrator"])
+        main(
+            [
+                "record-decision",
+                "--matter",
+                "demo",
+                "--gate",
+                "1",
+                "--decision",
+                "accept",
+                "--by",
+                "ip-orchestrator",
+            ]
+        )
         == EXIT["usage"]
     )
 
@@ -299,9 +383,7 @@ def test_an_agent_may_not_decide_gate_3(env: Path, replays: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_prompt_assembles_without_a_run(
-    env: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_prompt_assembles_without_a_run(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _new_matter()
     capsys.readouterr()
     assert main(["prompt", "--matter", "demo", "--prompt", "01"]) == EXIT["ok"]
@@ -372,9 +454,10 @@ def test_lock_held_by_a_live_process_exits_7(env: Path, replays: Path) -> None:
 
 def test_resume_is_an_alias_for_run(env: Path, replays: Path) -> None:
     _new_matter()
-    assert main(
-        ["resume", "--matter", "demo", "--transport", "fake", "--fixtures", str(replays)]
-    ) == EXIT["gate"]
+    assert (
+        main(["resume", "--matter", "demo", "--transport", "fake", "--fixtures", str(replays)])
+        == EXIT["gate"]
+    )
 
 
 def test_run_resumes_after_a_transport_failure(
@@ -404,3 +487,67 @@ def test_run_resumes_after_a_transport_failure(
     state = json.loads((env / "demo" / "state.json").read_text())
     assert state["status"] == "awaiting_gate"
     assert state["last_error"] is None
+
+
+def test_intake_writes_disclosure_and_named_references(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+
+    assert main(["new-matter", "--slug", "demo", "--title", "T", "--jurisdictions", "US"]) == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO("# My invention\n\nIt does a thing."))
+    assert main(["intake", "--matter", "demo", "--kind", "disclosure", "--stdin"]) == 0
+    disclosure = env / "demo" / "00-intake" / "disclosure.md"
+    assert disclosure.read_text().startswith("# My invention")
+    # Refuses to overwrite without --force.
+    monkeypatch.setattr("sys.stdin", io.StringIO("replacement"))
+    assert main(["intake", "--matter", "demo", "--kind", "disclosure", "--stdin"]) == EXIT["usage"]
+    assert disclosure.read_text().startswith("# My invention")
+    # Directory kinds need a name and get a slugified file.
+    monkeypatch.setattr("sys.stdin", io.StringIO("ref text"))
+    assert main(["intake", "--matter", "demo", "--kind", "prior-art", "--stdin"]) == EXIT["usage"]
+    monkeypatch.setattr("sys.stdin", io.StringIO("ref text"))
+    assert (
+        main(
+            [
+                "intake",
+                "--matter",
+                "demo",
+                "--kind",
+                "prior-art",
+                "--stdin",
+                "--name",
+                "US 1,234 B2",
+            ]
+        )
+        == 0
+    )
+    assert (env / "demo" / "00-intake" / "prior-art" / "us-1-234-b2.md").read_text() == "ref text\n"
+
+
+def test_run_background_detaches_and_reaches_gate_1(env: Path, replays: Path) -> None:
+    _new_matter()
+    code = main(
+        [
+            "run",
+            "--matter",
+            "demo",
+            "--background",
+            "--transport",
+            "fake",
+            "--fixtures",
+            str(replays),
+            "--until",
+            "gate1",
+        ]
+    )
+    assert code == 0
+    assert (env / "demo" / "run.pid").exists()
+    deadline = time.monotonic() + 90
+    status = None
+    while time.monotonic() < deadline:
+        status = json.loads((env / "demo" / "state.json").read_text())["status"]
+        if status in {"awaiting_gate", "failed", "complete"}:
+            break
+        time.sleep(0.5)
+    assert status == "awaiting_gate", (env / "demo" / "run.log").read_text()[-2000:]

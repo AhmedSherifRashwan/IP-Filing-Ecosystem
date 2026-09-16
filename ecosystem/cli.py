@@ -120,6 +120,21 @@ def build_parser() -> argparse.ArgumentParser:
         run.add_argument("--max-loopback-cycles", type=int)
         run.add_argument("--terminology", choices=["block", "warn"])
         run.add_argument("--allow-truncate", action="store_true")
+        run.add_argument(
+            "--background",
+            action="store_true",
+            help="launch detached and return at once; poll with `status --wait`",
+        )
+
+    intake = sub.add_parser("intake", help="put material into a matter's 00-intake")
+    intake.add_argument("--matter", required=True)
+    intake.add_argument(
+        "--kind", required=True, choices=["disclosure", "prior-art", "priority", "data", "answers"]
+    )
+    intake.add_argument("--name", help="short name for prior-art/priority/data files")
+    intake.add_argument("--file", help="copy this file (default: read stdin)")
+    intake.add_argument("--stdin", action="store_true", help="read the content from stdin")
+    intake.add_argument("--force", action="store_true", help="overwrite an existing file")
 
     status = sub.add_parser("status", help="where the matter is and what it needs")
     status.add_argument("--matter", required=True)
@@ -179,6 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         "resume": cmd_run,
         "status": cmd_status,
         "record-decision": cmd_record_decision,
+        "intake": cmd_intake,
         "prompt": cmd_prompt,
         "show": cmd_show,
         "package": cmd_package,
@@ -304,6 +320,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"matter {args.matter} is complete; nothing to run.")
         return EXIT["ok"]
 
+    if args.background:
+        return _spawn_background(args, dossier, settings)
+
     transport = _transport(args, settings)
     with Lock(dossier.root):
         # Re-read under the lock: another process may have decided a gate
@@ -316,6 +335,106 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     _print_stop(reason, dossier, state, settings)
     return _STOP_EXIT[reason]
+
+
+_BACKGROUND_PASSTHROUGH: Final[tuple[str, ...]] = (
+    "until",
+    "from_phase",
+    "transport",
+    "fixtures",
+    "max_inner_rounds",
+    "max_loopback_cycles",
+    "terminology",
+)
+
+
+def _spawn_background(args: argparse.Namespace, dossier: Dossier, settings: Settings) -> int:
+    """Start the run as a detached child and return at once.
+
+    The front-door agent drives the ecosystem through an exec tool with a
+    turn-length timeout; a run is hours. Detaching keeps the run alive across
+    that turn, and `status --wait` is how anyone watches it.
+    """
+    try:
+        with Lock(dossier.root):
+            pass
+    except LockHeld as exc:
+        return _fail(EXIT["lock"], str(exc))
+
+    argv = [sys.executable, "-m", "ecosystem", "run", "--matter", dossier.slug]
+    for name in _BACKGROUND_PASSTHROUGH:
+        value = getattr(args, name, None)
+        if value is not None:
+            argv += [f"--{name.replace('_', '-').replace('from-phase', 'from')}", str(value)]
+    if args.allow_truncate:
+        argv.append("--allow-truncate")
+
+    log_path = dossier.root / "run.log"
+    with log_path.open("ab") as log:
+        log.write(f"\n== ipfe run started {time.strftime('%Y-%m-%dT%H:%M:%S%z')}\n".encode())
+        child = subprocess.Popen(  # noqa: S603 - argv is built from our own flags
+            argv,
+            cwd=settings.repo_root,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    (dossier.root / "run.pid").write_text(str(child.pid))
+    print(f"run started in background for matter {dossier.slug} (pid {child.pid})")
+    print(f"log: {log_path}")
+    print(f"next: uv run ipfe status --matter {dossier.slug} --wait 240")
+    return EXIT["ok"]
+
+
+_INTAKE_SINGLE: Final[dict[str, str]] = {
+    "disclosure": "disclosure.md",
+    "answers": "gate-1-answers.md",
+}
+_INTAKE_DIR: Final[dict[str, str]] = {
+    "prior-art": "prior-art",
+    "priority": "priority",
+    "data": "data",
+}
+
+
+def _slugify(name: str) -> str:
+    slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in name.strip()).strip("-")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug[:64] or "item"
+
+
+def cmd_intake(args: argparse.Namespace) -> int:
+    """Write intake material for a matter. The only sanctioned writer into 00-intake."""
+    settings = _settings(args)
+    dossier, _state, events = _open(settings, args.matter)
+    if args.file and args.stdin:
+        return _fail(EXIT["usage"], "pass either --file or --stdin, not both")
+    if args.file:
+        source = Path(args.file).expanduser()
+        if not source.is_file():
+            return _fail(EXIT["usage"], f"no such file: {source}")
+        content = source.read_text(encoding="utf-8")
+    else:
+        content = sys.stdin.read()
+    if not content.strip():
+        return _fail(EXIT["usage"], "intake content is empty")
+
+    if args.kind in _INTAKE_SINGLE:
+        target = dossier.intake_dir / _INTAKE_SINGLE[args.kind]
+    else:
+        name = args.name or (Path(args.file).stem if args.file else None)
+        if not name:
+            return _fail(EXIT["usage"], f"--kind {args.kind} needs --name <short-name>")
+        target = dossier.intake_dir / _INTAKE_DIR[args.kind] / f"{_slugify(name)}.md"
+    if target.exists() and not args.force:
+        return _fail(EXIT["usage"], f"{target} exists; pass --force to overwrite")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content if content.endswith("\n") else content + "\n", encoding="utf-8")
+    events.emit("intake_written", kind=args.kind, path=str(target.relative_to(dossier.root)))
+    print(f"wrote {target} ({len(content):,} chars)")
+    return EXIT["ok"]
 
 
 def cmd_status(args: argparse.Namespace) -> int:

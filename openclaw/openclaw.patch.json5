@@ -14,8 +14,11 @@
 // `workspace` and its own `agentDir` — never share an agentDir between agents
 // (auth/session collisions).
 //
-// `tools.profile: "minimal"` — no web, exec, filesystem or messaging tools; dossier
-// text can reach only the model provider. No `tools.agentToAgent`, no `subagents`:
+// The six drafting/review agents run `tools.profile: "minimal"` — no web, exec,
+// filesystem or messaging tools; dossier text can reach only the model provider.
+// `ip-orchestrator` is the front door: it gets the global `coding` profile (read +
+// exec, like `nucleus`) so it can drive the runner through its `ip-ecosystem` skill,
+// with write/edit/browser/web tools denied. No `tools.agentToAgent`, no `subagents`:
 // the Python runner does all routing, which is what keeps ip-reviewer blind.
 //
 // Verified against `openclaw config schema` (2026.9.1): `tools.profile` and
@@ -29,7 +32,7 @@
         agentDir: "${HOME}/.openclaw/agents/ip-orchestrator/agent",
         identity: { name: "ip-orchestrator" },
         model: "anthropic/claude-sonnet-5",
-        tools: { profile: "minimal" },
+        tools: { profile: "coding", deny: ["write", "edit", "apply_patch", "browser", "web_search", "web_fetch", "canvas", "cron", "gateway"] },
       },
       "ip-disclosure": {
         name: "ip-disclosure",

@@ -92,6 +92,19 @@ for id in "${AGENT_IDS[@]}"; do
     if [ -f "$dst" ]; then would "update  $dst"; else would "create  $dst"; fi
     [ "$CHECK" = 0 ] && cp "$src" "$dst"
   done
+
+  # Workspace skills (agents/<id>/skills/*/SKILL.md), copied recursively; other
+  # files in the workspace skills dir are left alone.
+  if [ -d "$src_dir/skills" ]; then
+    while IFS= read -r -d '' src; do
+      rel="${src#"$src_dir/skills/"}"
+      dst="$ws/skills/$rel"
+      if [ -f "$dst" ] && cmp -s "$src" "$dst"; then continue; fi
+      CHANGES=$((CHANGES + 1))
+      if [ -f "$dst" ]; then would "update  $dst"; else would "create  $dst"; fi
+      if [ "$CHECK" = 0 ]; then mkdir -p "$(dirname "$dst")"; cp "$src" "$dst"; fi
+    done < <(find "$src_dir/skills" -type f -print0)
+  fi
 done
 [ "$CHANGES" = 0 ] && say "   all workspace files already up to date"
 
