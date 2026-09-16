@@ -1,0 +1,11 @@
+# Confidential inventor material — never commit
+dossiers/
+*.dossier.*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Local Claude settings
+.claude/settings.local.json
