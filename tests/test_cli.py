@@ -375,3 +375,32 @@ def test_resume_is_an_alias_for_run(env: Path, replays: Path) -> None:
     assert main(
         ["resume", "--matter", "demo", "--transport", "fake", "--fixtures", str(replays)]
     ) == EXIT["gate"]
+
+
+def test_run_resumes_after_a_transport_failure(
+    env: Path, replays: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed call (e.g. an expired provider login) must not strand the matter.
+
+    Re-running after the cause is fixed continues from the cursor and reaches
+    Gate 1; it does not need the dossier to be recreated.
+    """
+    from ecosystem.transport import GatewayAuthError
+    from tests import fakes
+
+    _new_matter()
+
+    def expired(self: object, req: object) -> object:
+        raise GatewayAuthError("Failed to authenticate: OAuth session expired")
+
+    with monkeypatch.context() as m:
+        m.setattr(fakes.FakeTransport, "call", expired)
+        assert _run(replays) == EXIT["transport"]
+    state = json.loads((env / "demo" / "state.json").read_text())
+    assert state["status"] == "failed"
+    assert "OAuth" in state["last_error"]["message"]
+    # Same matter, working transport: resumes and stops at Gate 1.
+    assert _run(replays) == EXIT["gate"]
+    state = json.loads((env / "demo" / "state.json").read_text())
+    assert state["status"] == "awaiting_gate"
+    assert state["last_error"] is None
