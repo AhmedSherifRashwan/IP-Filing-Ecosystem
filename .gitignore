@@ -1,6 +1,17 @@
 # Confidential inventor material — never commit
-dossiers/
-*.dossier.*
+dossiers/*
+!dossiers/.gitkeep
+
+# Rendered OpenClaw patch (contains absolute home paths)
+openclaw/.rendered.*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # OS / editor
 .DS_Store

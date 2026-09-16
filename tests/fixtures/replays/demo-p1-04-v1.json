@@ -1,0 +1,25 @@
+{
+  "call_id": "demo-p1-04-v1",
+  "agent_id": "ip-disclosure",
+  "session_key": "agent:ip-disclosure:demo-p1-04-v1",
+  "prompt_sha256": "",
+  "response": {
+    "runId": "run-demo-p1-04-v1",
+    "status": "ok",
+    "summary": "",
+    "result": {
+      "payloads": [
+        {
+          "text": "## Deliverable\n\n### Terminology Table\n\n| Preferred term | Synonyms | Broader (genus) | Narrower (species) | Functional description | Terms to avoid | Needs definition |\n| --- | --- | --- | --- | --- | --- | --- |\n| seat ring | seat insert | annular seat member | superelastic seat ring | flexes radially outward to open the purge gap | rubber grommet | yes |\n| purge gap | purge clearance | annular clearance | radial purge gap | admits pump air across the surfaces where sealant accumulates | escape hole | no |\n| poppet | closure member | movable valve member | conical poppet | seals against the seat ring and carries the purge shoulder | needle | no |\n| over-travel | extra stroke | axial displacement | threshold over-travel | poppet movement beyond the normal opening stroke | blow-by | no |\n\n## Rationale\n\nThe broader formulation was kept because narrowing to the prototype values would concede scope that the confirmed embodiments support.\n\n## Assumptions\n\n- A1: The bench prototype values are representative.\n\n## Open Questions\n\n- Q1: Is the alloy specification fixed? (blocks P4)\n\n```json\n{\n  \"prompt\": \"04\",\n  \"status\": \"complete\",\n  \"assumptions\": [\n    {\n      \"id\": \"A1\",\n      \"text\": \"The bench prototype values are representative.\",\n      \"blocking\": false\n    }\n  ],\n  \"open_questions\": [\n    {\n      \"id\": \"Q1\",\n      \"text\": \"Is the alloy specification fixed?\",\n      \"blocks\": [\n        \"P4\"\n      ]\n    }\n  ],\n  \"new_terms\": [],\n  \"support_refs\": [\n    {\n      \"item\": \"seat ring\",\n      \"support\": \"[0003]\"\n    }\n  ],\n  \"disclosure_requests\": [],\n  \"open_disagreements\": [],\n  \"narrowing_suggested\": []\n}\n```\n"
+        }
+      ],
+      "meta": {
+        "durationMs": 1234,
+        "systemPromptReport": {
+          "provider": "fake",
+          "model": "fake/ip-disclosure"
+        }
+      }
+    }
+  }
+}

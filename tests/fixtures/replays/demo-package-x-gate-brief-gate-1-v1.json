@@ -1,0 +1,25 @@
+{
+  "call_id": "demo-package-x-gate-brief-gate-1-v1",
+  "agent_id": "ip-orchestrator",
+  "session_key": "agent:ip-orchestrator:demo-package-x-gate-brief-gate-1-v1",
+  "prompt_sha256": "",
+  "response": {
+    "runId": "run-demo-package-x-gate-brief-gate-1-v1",
+    "status": "ok",
+    "summary": "",
+    "result": {
+      "payloads": [
+        {
+          "text": "## What was produced\n\nGate brief for the human: the phase ran and produced its outputs.\n\n## What you need to confirm\n\n- Q1: Is the alloy specification fixed?\n\n## Recommendation\n\nAccept, on the basis that the open questions do not block the next phase.\n\n## What happens next\n\nThe next phase runs once this gate is decided.\n\nNo agent in this system may authorise filing; this package is a drafting aid and requires review and sign-off by qualified patent counsel before any filing decision.\n"
+        }
+      ],
+      "meta": {
+        "durationMs": 1234,
+        "systemPromptReport": {
+          "provider": "fake",
+          "model": "fake/ip-orchestrator"
+        }
+      }
+    }
+  }
+}

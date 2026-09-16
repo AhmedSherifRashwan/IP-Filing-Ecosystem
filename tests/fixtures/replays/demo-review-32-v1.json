@@ -1,0 +1,25 @@
+{
+  "call_id": "demo-review-32-v1",
+  "agent_id": "ip-reviewer",
+  "session_key": "agent:ip-reviewer:demo-review-32-v1",
+  "prompt_sha256": "",
+  "response": {
+    "runId": "run-demo-review-32-v1",
+    "status": "ok",
+    "summary": "",
+    "result": {
+      "payloads": [
+        {
+          "text": "## Findings\n\n### Ranked Objections\n\nContent for this section of the fictional example matter. The seat ring 30 and the purge gap 60 are described with the locked preferred terms; the poppet 40 reaches over-travel above the threshold differential.\n\n| item | note |\n| --- | --- |\n| seat ring 30 | superelastic, convoluted wall |\n| purge gap 60 | closed at rest, opens on over-travel |\n\n### F-32-1 (critical, novelty)\n\nClaim language: \"1\". Claim 1 recites an over-travel position without reciting the radial expansion that distinguishes it; on the description's own admission a conventional core reaches an over-travel position.\n\nLeast narrowing action: Add disclosure of the radial expansion mechanism as an alternative embodiment rather than narrowing claim 1.\n\n## Corrections\n\nNone.\n\n## Assumptions\n\n- A1: Common general knowledge includes conventional Presta valve cores.\n\n## Open Questions\n\n- Q1: Has a prior-art search been commissioned?\n\n```json\n{\n  \"prompt\": \"32\",\n  \"status\": \"complete\",\n  \"findings\": [\n    {\n      \"id\": \"F-32-1\",\n      \"source_prompt\": \"32\",\n      \"category\": \"novelty\",\n      \"severity\": \"critical\",\n      \"title\": \"Claim 1 reads on a conventional two-rate core\",\n      \"claim_refs\": [\n        \"1\"\n      ],\n      \"spec_refs\": [\n        \"[0004]\"\n      ],\n      \"attack\": \"Claim 1 recites an over-travel position without reciting the radial expansion that distinguishes it; on the description's own admission a conventional core reaches an over-travel position.\",\n      \"least_narrowing_action\": \"Add disclosure of the radial expansion mechanism as an alternative embodiment rather than narrowing claim 1.\",\n      \"requires_new_disclosure\": true,\n      \"suggested_target\": \"P3\"\n    }\n  ],\n  \"corrections\": [],\n  \"gate14\": [],\n  \"assumptions\": [],\n  \"open_questions\": []\n}\n```\n"
+        }
+      ],
+      "meta": {
+        "durationMs": 1234,
+        "systemPromptReport": {
+          "provider": "fake",
+          "model": "fake/ip-reviewer"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,86 @@
+// openclaw/openclaw.patch.json5 — registers the seven IP Filing Ecosystem agents.
+//
+// Apply with:   openclaw config patch --file openclaw/.rendered.patch.json5 [--dry-run]
+// (scripts/install.sh does this for you.)
+//
+// `${HOME}` is a placeholder. It is NOT understood by OpenClaw; scripts/install.sh
+// renders it to the absolute home directory (via sed) into
+// `openclaw/.rendered.patch.json5`, which is gitignored, and patches from that
+// file. Never apply this file directly.
+//
+// This patch adds ONLY `agents.entries.<id>` for the seven ids below. `config patch`
+// merges objects recursively, so existing entries (main, nucleus, pharma-*) and every
+// other section of openclaw.json are left untouched. Each agent has its own
+// `workspace` and its own `agentDir` — never share an agentDir between agents
+// (auth/session collisions).
+//
+// `tools.profile: "minimal"` — no web, exec, filesystem or messaging tools; dossier
+// text can reach only the model provider. No `tools.agentToAgent`, no `subagents`:
+// the Python runner does all routing, which is what keeps ip-reviewer blind.
+//
+// Verified against `openclaw config schema` (2026.9.1): `tools.profile` and
+// `thinkingDefault` are both valid keys on an `agents.entries.*` object.
+{
+  agents: {
+    entries: {
+      "ip-orchestrator": {
+        name: "ip-orchestrator",
+        workspace: "${HOME}/.openclaw/workspaces/ip-orchestrator",
+        agentDir: "${HOME}/.openclaw/agents/ip-orchestrator/agent",
+        identity: { name: "ip-orchestrator" },
+        model: "anthropic/claude-sonnet-5",
+        tools: { profile: "minimal" },
+      },
+      "ip-disclosure": {
+        name: "ip-disclosure",
+        workspace: "${HOME}/.openclaw/workspaces/ip-disclosure",
+        agentDir: "${HOME}/.openclaw/agents/ip-disclosure/agent",
+        identity: { name: "ip-disclosure" },
+        model: "anthropic/claude-opus-5",
+        tools: { profile: "minimal" },
+      },
+      "ip-prior-art": {
+        name: "ip-prior-art",
+        workspace: "${HOME}/.openclaw/workspaces/ip-prior-art",
+        agentDir: "${HOME}/.openclaw/agents/ip-prior-art/agent",
+        identity: { name: "ip-prior-art" },
+        model: "anthropic/claude-opus-5",
+        tools: { profile: "minimal" },
+      },
+      "ip-embodiment": {
+        name: "ip-embodiment",
+        workspace: "${HOME}/.openclaw/workspaces/ip-embodiment",
+        agentDir: "${HOME}/.openclaw/agents/ip-embodiment/agent",
+        identity: { name: "ip-embodiment" },
+        model: "anthropic/claude-opus-5",
+        tools: { profile: "minimal" },
+      },
+      "ip-spec": {
+        name: "ip-spec",
+        workspace: "${HOME}/.openclaw/workspaces/ip-spec",
+        agentDir: "${HOME}/.openclaw/agents/ip-spec/agent",
+        identity: { name: "ip-spec" },
+        model: "anthropic/claude-opus-5",
+        thinkingDefault: "high",
+        tools: { profile: "minimal" },
+      },
+      "ip-claims": {
+        name: "ip-claims",
+        workspace: "${HOME}/.openclaw/workspaces/ip-claims",
+        agentDir: "${HOME}/.openclaw/agents/ip-claims/agent",
+        identity: { name: "ip-claims" },
+        model: "anthropic/claude-opus-5",
+        thinkingDefault: "high",
+        tools: { profile: "minimal" },
+      },
+      "ip-reviewer": {
+        name: "ip-reviewer",
+        workspace: "${HOME}/.openclaw/workspaces/ip-reviewer",
+        agentDir: "${HOME}/.openclaw/agents/ip-reviewer/agent",
+        identity: { name: "ip-reviewer" },
+        model: "openai/gpt-5.6-sol",
+        tools: { profile: "minimal" },
+      },
+    },
+  },
+}
