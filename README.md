@@ -17,7 +17,7 @@ treated as fact until a human gate accepts it, and no agent can authorise filing
 
 | Agent id | Playbook role | Prompts | Model |
 |---|---|---|---|
-| `ip-orchestrator` | Agent 1 — front door and coordinator (router, not drafter) | process | anthropic/claude-sonnet-5 |
+| `patentcounsel` (**PatentCounsel**) | Agent 1 — front door and coordinator (router, not drafter) | process | anthropic/claude-sonnet-5 |
 | `ip-disclosure` | Agent 2 — Disclosure Analyst | 1–5 | anthropic/claude-opus-5 |
 | `ip-prior-art` | Agent 3 — Prior Art & Differentiation Strategist | 6–10 | anthropic/claude-opus-5 |
 | `ip-embodiment` | Agent 4 — Embodiment & Design-Around Architect | 11–15 | anthropic/claude-opus-5 |

@@ -20,7 +20,7 @@ CONFIG="$OC_HOME/openclaw.json"
 PATCH_SRC="$REPO/openclaw/openclaw.patch.json5"
 PATCH_RENDERED="$REPO/openclaw/.rendered.patch.json5"
 
-AGENT_IDS=(ip-orchestrator ip-disclosure ip-prior-art ip-embodiment ip-spec ip-claims ip-reviewer)
+AGENT_IDS=(patentcounsel ip-disclosure ip-prior-art ip-embodiment ip-spec ip-claims ip-reviewer)
 WORKSPACE_FILES=(SOUL.md AGENTS.md IDENTITY.md)
 PER_FILE_CAP=20000     # OpenClaw bootstrapMaxChars default
 WORKSPACE_CAP=60000    # per-workspace bootstrap total

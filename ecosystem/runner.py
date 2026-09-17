@@ -2,7 +2,7 @@
 
 Everything the playbook makes advisory, this module makes deterministic. Caps
 are counters, gates are files, sequencing is a list. No agent decides what runs
-next; `ip-orchestrator` is called only for prose a human reads.
+next; `patentcounsel` is called only for prose a human reads.
 
 The run is a sequence of stages, each one idempotent:
 
@@ -397,7 +397,7 @@ class Runner:
         )
 
     def _gate_brief(self, gate: str, record: dict[str, Any]) -> str:
-        """Ask ip-orchestrator for the brief. Failure is the caller's to swallow."""
+        """Ask patentcounsel for the brief. Failure is the caller's to swallow."""
         spec = self.playbook.get("x-gate-brief")
         stem = gate if gate.startswith("loopback-cap-") else f"gate-{gate}"
         round_no = len(list(self.dossier.gates_dir.glob(f"{stem}.decided.r*.json"))) + 1
@@ -944,7 +944,7 @@ class Runner:
         return None
 
     def _cover_memo(self, package_dir: Path, review_version: int, version: int) -> str:
-        """Prose from ip-orchestrator. A failure here degrades, it does not block."""
+        """Prose from patentcounsel. A failure here degrades, it does not block."""
         spec = self.playbook.get("x-package-memo")
         ctx = AttemptContext(
             write_output=False,

@@ -160,7 +160,7 @@ def test_agent_ids_may_not_decide_a_gate(
     _p1(dossier, state)
     gates.request("3", {}, ["filing"])
     with pytest.raises(GateRefused, match="names an agent"):
-        gates.decide("3", "accept", "ip-orchestrator")
+        gates.decide("3", "accept", "patentcounsel")
     with pytest.raises(GateRefused):
         gates.decide("3", "accept", "   ")
 

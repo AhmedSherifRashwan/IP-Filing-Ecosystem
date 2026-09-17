@@ -16,7 +16,7 @@
 //
 // The six drafting/review agents run `tools.profile: "minimal"` — no web, exec,
 // filesystem or messaging tools; dossier text can reach only the model provider.
-// `ip-orchestrator` is the front door: it gets the global `coding` profile (read +
+// `patentcounsel` is the front door: it gets the global `coding` profile (read +
 // exec, like `nucleus`) so it can drive the runner through its `ip-ecosystem` skill,
 // with write/edit/browser/web tools denied. No `tools.agentToAgent`, no `subagents`:
 // the Python runner does all routing, which is what keeps ip-reviewer blind.
@@ -26,11 +26,11 @@
 {
   agents: {
     entries: {
-      "ip-orchestrator": {
-        name: "ip-orchestrator",
-        workspace: "${HOME}/.openclaw/workspaces/ip-orchestrator",
-        agentDir: "${HOME}/.openclaw/agents/ip-orchestrator/agent",
-        identity: { name: "ip-orchestrator" },
+      "patentcounsel": {
+        name: "PatentCounsel",
+        workspace: "${HOME}/.openclaw/workspaces/patentcounsel",
+        agentDir: "${HOME}/.openclaw/agents/patentcounsel/agent",
+        identity: { name: "PatentCounsel" },
         model: "anthropic/claude-sonnet-5",
         tools: { profile: "coding", deny: ["write", "edit", "apply_patch", "browser", "web_search", "web_fetch", "canvas", "cron", "gateway"] },
       },

@@ -2,7 +2,7 @@
 id: "x-package-memo"
 title: "Cover memo for counsel"
 phase: PACKAGE
-agent: ip-orchestrator
+agent: patentcounsel
 kind: prose
 inputs: [package:all, findings:all, out:REVIEW/gate14, out:REVIEW/39]
 optional_inputs: [inner_loop_flags, open_disagreements, out:REVIEW/40]

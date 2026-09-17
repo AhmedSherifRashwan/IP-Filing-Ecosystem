@@ -371,7 +371,7 @@ def test_an_agent_may_not_decide_gate_3(env: Path, replays: Path) -> None:
                 "--decision",
                 "accept",
                 "--by",
-                "ip-orchestrator",
+                "patentcounsel",
             ]
         )
         == EXIT["usage"]

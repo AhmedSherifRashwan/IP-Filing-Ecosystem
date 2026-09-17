@@ -299,7 +299,7 @@ def build_final_package(
 
 
 def write_cover_memo(dossier: Dossier, package_dir: Path, text: str) -> Path:
-    """Replace the fallback memo once ip-orchestrator has written the real one."""
+    """Replace the fallback memo once patentcounsel has written the real one."""
     path = package_dir / "cover-memo.md"
     body = text.rstrip() + "\n"
     if _CONTACT_SENTENCE not in body:
@@ -456,7 +456,7 @@ def _cell(text: str) -> str:
 
 
 def _fallback_memo(dossier: Dossier, state: MatterState) -> str:
-    """Used when ip-orchestrator could not be reached. Facts only, no reassurance."""
+    """Used when patentcounsel could not be reached. Facts only, no reassurance."""
     return "\n".join(
         [
             "# Cover memo",

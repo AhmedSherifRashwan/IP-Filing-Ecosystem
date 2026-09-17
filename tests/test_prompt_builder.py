@@ -102,7 +102,7 @@ def test_contract_fragment_by_kind() -> None:
 
 
 def test_prose_prompts_get_no_output_contract(dossier: Dossier, settings: Settings) -> None:
-    result = _assemble(dossier, settings, _spec(kind="prose", agent="ip-orchestrator"))
+    result = _assemble(dossier, settings, _spec(kind="prose", agent="patentcounsel"))
     assert "## Output contract" not in result.text
 
 

@@ -169,7 +169,7 @@ def test_run_stops_at_gate_1(harness: Harness) -> None:
         "demo-p1-05-v1",
     ]
     # The gate brief is the sixth call, and it goes to the orchestrator.
-    assert harness.transport.calls[5].agent_id == "ip-orchestrator"
+    assert harness.transport.calls[5].agent_id == "patentcounsel"
     assert (harness.dossier.briefs_dir / "gate-1.md").is_file()
     assert (harness.dossier.gates_dir / "gate-1.pending.json").is_file()
 

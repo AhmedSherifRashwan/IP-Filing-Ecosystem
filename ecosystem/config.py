@@ -27,7 +27,7 @@ __all__ = [
 
 # The seven native OpenClaw agents (Part 1 of the plan). Order is the pipeline order.
 AGENT_IDS: Final[tuple[str, ...]] = (
-    "ip-orchestrator",
+    "patentcounsel",
     "ip-disclosure",
     "ip-prior-art",
     "ip-embodiment",
@@ -55,7 +55,7 @@ PHASE_AGENT: Final[dict[str, str]] = {
     "P4": "ip-spec",
     "P5": "ip-claims",
     "REVIEW": "ip-reviewer",
-    "PACKAGE": "ip-orchestrator",
+    "PACKAGE": "patentcounsel",
 }
 
 # Loop-back routing keys. A finding carrying any other category is a contract error.

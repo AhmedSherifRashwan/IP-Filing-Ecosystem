@@ -17,7 +17,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OPENCLAW="${OPENCLAW_BIN:-$HOME/.openclaw/bin/openclaw}"
 OC_HOME="$HOME/.openclaw"
 CONFIG="$OC_HOME/openclaw.json"
-AGENT_IDS=(ip-orchestrator ip-disclosure ip-prior-art ip-embodiment ip-spec ip-claims ip-reviewer)
+AGENT_IDS=(patentcounsel ip-disclosure ip-prior-art ip-embodiment ip-spec ip-claims ip-reviewer)
 
 PURGE=0
 for arg in "$@"; do

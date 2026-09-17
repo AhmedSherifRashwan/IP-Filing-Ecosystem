@@ -1,7 +1,7 @@
 {
   "call_id": "demo-package-x-gate-brief-gate-1-v1",
-  "agent_id": "ip-orchestrator",
-  "session_key": "agent:ip-orchestrator:demo-package-x-gate-brief-gate-1-v1",
+  "agent_id": "patentcounsel",
+  "session_key": "agent:patentcounsel:demo-package-x-gate-brief-gate-1-v1",
   "prompt_sha256": "",
   "response": {
     "runId": "run-demo-package-x-gate-brief-gate-1-v1",
@@ -17,7 +17,7 @@
         "durationMs": 1234,
         "systemPromptReport": {
           "provider": "fake",
-          "model": "fake/ip-orchestrator"
+          "model": "fake/patentcounsel"
         }
       }
     }

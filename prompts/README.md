@@ -22,7 +22,7 @@ Fragments start with `_` and carry no frontmatter. Everything else is a prompt f
 id: "07"                       # string. Always quoted so "07" stays "07".
 title: "Prior-art claim chart"
 phase: P2                      # P1 | P2 | P3 | P4 | P5 | REVIEW | PACKAGE | LOOPBACK
-agent: ip-prior-art            # ip-orchestrator | ip-disclosure | ip-prior-art | ip-embodiment | ip-spec | ip-claims | ip-reviewer
+agent: ip-prior-art            # patentcounsel | ip-disclosure | ip-prior-art | ip-embodiment | ip-spec | ip-claims | ip-reviewer
 kind: analysis                 # analysis | drafting | review | compose | revise | prose
 inputs: [intake:prior-art/*, out:P1/01, out:P1/03, terminology, intake:gate-1-answers]
 optional_inputs: [out:P1/04, out:P2/06]
@@ -131,8 +131,8 @@ Only these forms are used:
 | x-p5-revise | `x-p5-revise.md` | P5 | ip-claims | revise (`### Final Claim Set` → `claims.md`) |
 | x-loopback-p3 | `x-loopback-p3.md` | P3 | ip-embodiment | drafting |
 | x-formal-fix | `x-formal-fix.md` | REVIEW | ip-spec (or ip-claims, runner override) | revise |
-| x-gate-brief | `x-gate-brief.md` | PACKAGE | ip-orchestrator | prose (inputs vary; all listed as optional) |
-| x-package-memo | `x-package-memo.md` | PACKAGE | ip-orchestrator | prose |
+| x-gate-brief | `x-gate-brief.md` | PACKAGE | patentcounsel | prose (inputs vary; all listed as optional) |
+| x-package-memo | `x-package-memo.md` | PACKAGE | patentcounsel | prose |
 
 44 playbook prompts + 7 runner templates = 51 prompt files, plus 3 fragments and this README.
 

@@ -2,7 +2,7 @@
 id: "x-gate-brief"
 title: "Gate brief for the human"
 phase: PACKAGE
-agent: ip-orchestrator
+agent: patentcounsel
 kind: prose
 inputs: []
 optional_inputs: [out:P1/01, out:P1/03, out:P1/04, out:P1/05, out:P3/11, out:P3/12, out:P3/13, out:P3/14, out:P3/15, findings:all, inner_loop_flags, open_disagreements, disclosure_requests, package:all]

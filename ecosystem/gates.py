@@ -1,7 +1,7 @@
 """The three human gates, plus the loop-back cap gates.
 
 A gate is two files and one state transition. `request()` writes
-`gates/<stem>.pending.json`, stops the run and asks `ip-orchestrator` for a
+`gates/<stem>.pending.json`, stops the run and asks `patentcounsel` for a
 plain-language brief; `decide()` validates the decision, writes
 `gates/<stem>.decided.json` and applies the side effects that only a human may
 authorise:
@@ -184,7 +184,7 @@ class Gates:
         return path
 
     def _write_brief(self, gate: str, record: dict[str, Any]) -> Path:
-        """Ask ip-orchestrator for the brief; never let that failure block the gate.
+        """Ask patentcounsel for the brief; never let that failure block the gate.
 
         The brief is a convenience for the human. The pending file is the
         contract. If the gateway is down, the human still gets a usable brief
