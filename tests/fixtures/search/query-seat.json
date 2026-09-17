@@ -1,0 +1,35 @@
+{
+  "results": {
+    "total_num_results": 87,
+    "cluster": [
+      {
+        "result": [
+          {
+            "patent": {
+              "title": "Tyre valve with flexible <b>elastomer</b> seat",
+              "snippet": " &hellip; the lip deflects outward to enlarge the flow passage &hellip;",
+              "priority_date": "2018-06-09",
+              "filing_date": "2019-06-05",
+              "publication_date": "2021-03-03",
+              "assignee": "Vellmar Reifentechnik GmbH",
+              "publication_number": "EP3456789B1",
+              "language": "en"
+            }
+          },
+          {
+            "patent": {
+              "title": "Shape-memory seat ring for a pneumatic valve",
+              "snippet": " &hellip; a superelastic seat ring returns to shape on depressurisation &hellip;",
+              "priority_date": "2020-01-14",
+              "filing_date": "2021-01-13",
+              "publication_date": "2022-08-30",
+              "assignee": "Kestrel Pneumatics Ltd",
+              "publication_number": "US9999999B1",
+              "language": "en"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -583,3 +583,28 @@ def test_unattended_run_goes_straight_to_gate_3(env: Path, replays: Path) -> Non
         == 0
     )
     assert json.loads((env / "demo" / "state.json").read_text())["status"] == "complete"
+
+
+def test_search_opt_in_is_remembered_and_clearable(env: Path, replays: Path) -> None:
+    _new_matter()
+    assert _run(replays, "--search", "--until", "gate1") == EXIT["gate"]
+    assert json.loads((env / "demo" / "state.json").read_text())["search"] is True
+    assert (
+        main(
+            [
+                "record-decision",
+                "--matter",
+                "demo",
+                "--gate",
+                "1",
+                "--decision",
+                "accept",
+                "--by",
+                "op",
+            ]
+        )
+        == 0
+    )
+    # Clearing it means Phase 2 runs on human references only (the replay has no search fixtures).
+    assert _run(replays, "--no-search", "--until", "gate2") == EXIT["gate"]
+    assert json.loads((env / "demo" / "state.json").read_text())["search"] is False

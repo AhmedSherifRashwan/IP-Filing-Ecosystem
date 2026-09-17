@@ -20,7 +20,12 @@ from ecosystem.dossier import Dossier, split_frontmatter
 from ecosystem.gates import Gates
 from ecosystem.log import EventLog
 from ecosystem.playbook import load_playbook
-from ecosystem.runner import Runner, StopReason
+from ecosystem.runner import (
+    REVIEW_PROMPTS,
+    SECOND_REVIEWER_SUFFIX,
+    Runner,
+    StopReason,
+)
 from ecosystem.state import MatterState, new_state
 from ecosystem.state import load as load_state
 from ecosystem.state import save as save_state
@@ -33,6 +38,7 @@ from tests.replay_builder import (
     gate14_answers,
     materialise,
     novelty_finding,
+    second_reviewer_key,
 )
 
 
@@ -489,3 +495,214 @@ def test_a_resolved_error_is_not_reported_as_current(harness: Harness) -> None:
 
     harness.run()
     assert harness.state.last_error is None
+
+
+# ---------------------------------------------------------------------------
+# the second independent reviewer
+# ---------------------------------------------------------------------------
+
+
+TITLE = "Self-purging bicycle tube valve"
+
+
+def build_harness(
+    settings: Settings, playbook, tmp_path: Path, scenario: Scenario, name: str = "alt"
+) -> Harness:
+    """A harness on its own scenario, for the tests that need a different replay."""
+    replays = tmp_path / f"replays-{name}"
+    materialise(playbook, replays, scenario)
+    dossier = Dossier(settings.dossier_root(scenario.slug), settings).create(
+        scenario.slug,
+        TITLE,
+        ["US", "EP"],
+        from_example=REPO_ROOT / "tests" / "fixtures" / "example-matter",
+    )
+    save_state(new_state(scenario.slug, TITLE, ["US", "EP"]), dossier.state_path)
+    return Harness(dossier, playbook, settings, replays)
+
+
+def _b_finding(severity: str, title: str, n: int = 1) -> dict:
+    """A finding only `ip-reviewer-b` raises: nothing in A's replay looks like it."""
+    return {
+        "id": f"F-32-{n}",
+        "source_prompt": "32",
+        "category": "novelty",
+        "severity": severity,
+        "title": title,
+        "claim_refs": ["5"],
+        "spec_refs": ["[0005]"],
+        "attack": "The method claim recites no step the description does not admit is routine.",
+        "least_narrowing_action": "Disclose the threshold determination as a positive step.",
+        "requires_new_disclosure": True,
+        "suggested_target": "P3",
+    }
+
+
+def test_both_reviewers_run_the_same_review_round(harness: Harness) -> None:
+    """One package, two model families, one batch. Neither waits for the other."""
+    _to_review(harness)
+    called = harness.prompts_called()
+
+    assert fixture_key("demo", "REVIEW", "32", 1) in called
+    assert second_reviewer_key("demo", "32", 1) in called
+    # Every review prompt was doubled, and only the review prompts were.
+    for prompt_id in REVIEW_PROMPTS:
+        assert second_reviewer_key("demo", prompt_id, 1) in called
+    assert fixture_key("demo", "REVIEW", "gate14", 1, SECOND_REVIEWER_SUFFIX) not in called
+
+    agents = {
+        call.agent_id
+        for call in harness.transport.calls
+        if second_reviewer_key("demo", "32", 1) in (call.session_key or "")
+    }
+    assert agents == {"ip-reviewer-b"}
+
+
+def test_the_second_reviewer_writes_its_own_outputs_and_sees_the_same_blind_package(
+    harness: Harness,
+) -> None:
+    _to_review(harness)
+    review = harness.dossier.versions("REVIEW")[0]
+
+    assert (review.path / "32b.envelope.json").is_file()
+    assert (review.path / "32.envelope.json").is_file()
+
+    a_prompt = (harness.dossier.runs_dir / "demo-review-32-v1-a0" / "prompt.md").read_text(
+        encoding="utf-8"
+    )
+    b_prompt = (harness.dossier.runs_dir / "demo-review-32-b-v1-a0" / "prompt.md").read_text(
+        encoding="utf-8"
+    )
+    # Same blind package, byte for byte: the second opinion is about the model,
+    # not about giving one reviewer more to work with.
+    assert a_prompt == b_prompt
+    assert "## Rationale" not in b_prompt
+
+
+def test_an_objection_both_reviewers_raised_is_marked_consensus(harness: Harness) -> None:
+    _to_review(harness)
+    review = harness.dossier.versions("REVIEW")[0]
+    findings = json.loads((review.path / "findings.json").read_text(encoding="utf-8"))
+
+    novelty = [f for f in findings["findings"] if f["category"] == "novelty"]
+    assert len(novelty) == 1, "the two reviewers' copies of one objection must merge into one"
+    assert novelty[0]["consensus"] is True
+    assert novelty[0]["reviewers"] == ["ip-reviewer", "ip-reviewer-b"]
+
+    summary = json.loads((review.path / "consensus-summary.json").read_text(encoding="utf-8"))
+    assert summary["counts"]["consensus"] == 1
+    assert summary["counts"]["b_only"] == 0
+    assert summary["by_severity"]["critical"]["consensus"] == 1
+    assert summary["reviewers"] == ["ip-reviewer", "ip-reviewer-b"]
+
+    entry = harness.state.review.versions[0]
+    assert entry.reviewers == ["ip-reviewer", "ip-reviewer-b"]
+    assert entry.consensus["consensus"] == 1
+
+
+def test_a_high_only_one_reviewer_raised_is_carried_not_routed(
+    settings: Settings, playbook, tmp_path: Path
+) -> None:
+    """A single model's `high` is a lead. Leads do not get to spend a cycle."""
+    scenario = Scenario(slug="demo").at(
+        second_reviewer_key("demo", "32", 1),
+        findings=[_b_finding("high", "Claim 5 recites only routine steps")],
+    )
+    harness = build_harness(settings, playbook, tmp_path, scenario, "b-high")
+
+    harness.run()
+    harness.decide("1", "accept")
+    harness.run()
+    harness.decide("2", "accept")
+    reason = harness.run(until="review")
+
+    assert reason is StopReason.UNTIL
+    assert harness.state.loopback.history == []
+    assert harness.state.loopback.cycles.get("novelty", 0) == 0
+
+    review = harness.dossier.versions("REVIEW")[0]
+    findings = json.loads((review.path / "findings.json").read_text(encoding="utf-8"))
+    carried = [f for f in findings["findings"] if f["severity"] == "high"]
+    assert len(carried) == 1
+    assert carried[0]["reviewers"] == ["ip-reviewer-b"]
+    assert carried[0]["consensus"] is False
+    assert json.loads((review.path / "consensus-summary.json").read_text())["counts"]["b_only"] == 1
+
+
+def test_the_carried_high_reaches_counsel_tagged_single_reviewer(
+    settings: Settings, playbook, tmp_path: Path
+) -> None:
+    scenario = (
+        Scenario(slug="demo")
+        .at(
+            second_reviewer_key("demo", "32", 1),
+            findings=[_b_finding("high", "Claim 5 recites only routine steps")],
+        )
+        .at(fixture_key("demo", "REVIEW", "gate14", 1), gate14=gate14_answers())
+    )
+    harness = build_harness(settings, playbook, tmp_path, scenario, "b-high-pkg")
+
+    harness.run()
+    harness.decide("1", "accept")
+    harness.run()
+    harness.decide("2", "accept")
+    assert harness.run() is StopReason.GATE
+
+    residuals = (harness.dossier.latest("PACKAGE").path / "residual-findings.md").read_text(
+        encoding="utf-8"
+    )
+    assert "reviewer agreement" in residuals
+    assert "ip-reviewer-b only (single-reviewer)" in residuals
+
+
+def test_a_critical_only_one_reviewer_raised_still_routes(
+    settings: Settings, playbook, tmp_path: Path
+) -> None:
+    """Either reviewer saying the claim falls as drafted is enough to spend a cycle."""
+    scenario = Scenario(slug="demo").at(
+        second_reviewer_key("demo", "32", 1),
+        findings=[_b_finding("critical", "Claim 5 is anticipated by the admitted art")],
+    )
+    harness = build_harness(settings, playbook, tmp_path, scenario, "b-critical")
+
+    harness.run()
+    harness.decide("1", "accept")
+    harness.run()
+    harness.decide("2", "accept")
+    reason = harness.run(until="review")
+
+    # Novelty routes through Phase 3, which stops for the Gate 2 delta.
+    assert reason is StopReason.GATE
+    assert harness.state.loopback.cycles["novelty"] == 1
+    assert "demo-p3-x-loopback-p3-v2" in harness.prompts_called()
+
+
+def test_disabling_the_second_reviewer_restores_the_old_single_reviewer_run(
+    settings: Settings, playbook, tmp_path: Path
+) -> None:
+    """`IPFE_SECOND_REVIEWER=0`: one reviewer, and its `high` routes again."""
+    single = settings.model_copy(update={"second_reviewer": False})
+    assert Settings.from_env({"IPFE_SECOND_REVIEWER": "0"}).second_reviewer is False
+
+    scenario = Scenario(slug="demo").at(
+        fixture_key("demo", "REVIEW", "32", 1),
+        findings=[_b_finding("high", "Claim 5 recites only routine steps")],
+    )
+    harness = build_harness(single, playbook, tmp_path, scenario, "single")
+
+    harness.run()
+    harness.decide("1", "accept")
+    harness.run()
+    harness.decide("2", "accept")
+    reason = harness.run(until="review")
+
+    called = harness.prompts_called()
+    assert second_reviewer_key("demo", "32", 1) not in called
+    assert not any(call.agent_id == "ip-reviewer-b" for call in harness.transport.calls)
+
+    assert reason is StopReason.GATE
+    assert harness.state.loopback.cycles["novelty"] == 1
+    review = harness.dossier.versions("REVIEW")[0]
+    assert not (review.path / "32b.envelope.json").exists()
+    findings = json.loads((review.path / "findings.json").read_text(encoding="utf-8"))
+    assert findings["findings"][0]["reviewers"] == ["ip-reviewer"]

@@ -102,3 +102,53 @@ def test_milestone_verbosity_drops_per_prompt_chatter() -> None:
     assert format_event(rec, verbosity="milestones") is None
     done = _rec("phase_completed", phase="P2", version=1, status="complete", trigger="initial")
     assert format_event(done, verbosity="milestones") is not None
+
+
+def test_loopback_routed_names_how_the_two_reviewers_split() -> None:
+    text = format_event(
+        _rec(
+            "loopback_routed",
+            phase="REVIEW",
+            categories=["novelty"],
+            cycle=1,
+            route=["x-loopback-p3", "x-p4-revise"],
+            findings=["F-32-1"],
+            consensus={"consensus": 1, "a_only": 2, "b_only": 1},
+        )
+    )
+    assert text == (
+        "Matter demo: independent review raised 1 critical/high finding(s) in [novelty]; "
+        "loop-back cycle 1 routed to x-loopback-p3, x-p4-revise "
+        "(reviewers: 1 agreed, 2 ip-reviewer only, 1 ip-reviewer-b only)."
+    )
+    assert text.count(".") == 1, "the relay message stays one sentence"
+
+
+def test_a_single_reviewer_run_says_nothing_about_consensus() -> None:
+    """`0 agreed` would read as the reviewers disagreeing rather than as one reviewer."""
+    text = format_event(
+        _rec(
+            "loopback_routed",
+            phase="REVIEW",
+            categories=["novelty"],
+            cycle=1,
+            route=["x-p4-revise"],
+            findings=["F-32-1"],
+            consensus={"consensus": 0, "a_only": 1, "b_only": 0},
+        )
+    )
+    assert text is not None
+    assert "reviewers:" not in text
+
+    without = format_event(
+        _rec(
+            "loopback_routed",
+            phase="REVIEW",
+            categories=["novelty"],
+            cycle=1,
+            route=["x-p4-revise"],
+            findings=["F-32-1"],
+        )
+    )
+    assert without is not None
+    assert "reviewers:" not in without

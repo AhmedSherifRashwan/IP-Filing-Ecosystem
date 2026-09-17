@@ -1,4 +1,4 @@
-// openclaw/openclaw.patch.json5 — registers the seven IP Filing Ecosystem agents.
+// openclaw/openclaw.patch.json5 — registers the eight IP Filing Ecosystem agents.
 //
 // Apply with:   openclaw config patch --file openclaw/.rendered.patch.json5 [--dry-run]
 // (scripts/install.sh does this for you.)
@@ -8,13 +8,13 @@
 // `openclaw/.rendered.patch.json5`, which is gitignored, and patches from that
 // file. Never apply this file directly.
 //
-// This patch adds ONLY `agents.entries.<id>` for the seven ids below. `config patch`
+// This patch adds ONLY `agents.entries.<id>` for the eight ids below. `config patch`
 // merges objects recursively, so existing entries (main, nucleus, pharma-*) and every
 // other section of openclaw.json are left untouched. Each agent has its own
 // `workspace` and its own `agentDir` — never share an agentDir between agents
 // (auth/session collisions).
 //
-// The six drafting/review agents run `tools.profile: "minimal"` — no web, exec,
+// The seven drafting/review agents run `tools.profile: "minimal"` — no web, exec,
 // filesystem or messaging tools; dossier text can reach only the model provider.
 // `patentcounsel` is the front door: it gets the global `coding` profile (read +
 // exec, like `nucleus`) so it can drive the runner through its `ip-ecosystem` skill,
@@ -82,6 +82,32 @@
         agentDir: "${HOME}/.openclaw/agents/ip-reviewer/agent",
         identity: { name: "ip-reviewer" },
         model: "openai/gpt-5.6-sol",
+        tools: { profile: "minimal" },
+      },
+      // Second independent reviewer. Deliberately a different model family from
+      // ip-reviewer: two readings of the same text by the same model would agree
+      // for reasons that have nothing to do with the text, and the whole value of
+      // the consensus mark in findings.json is that the agreement was not shared
+      // machinery. Its own workspace and agentDir, no agent-to-agent tools, and
+      // it is never told the first reviewer exists — the runner merges the two
+      // finding sets afterwards.
+      "ip-reviewer-b": {
+        name: "ip-reviewer-b",
+        workspace: "${HOME}/.openclaw/workspaces/ip-reviewer-b",
+        agentDir: "${HOME}/.openclaw/agents/ip-reviewer-b/agent",
+        identity: { name: "ip-reviewer-b" },
+        model: "anthropic/claude-opus-5",
+        tools: { profile: "minimal" },
+      },
+      // ip-searcher: triages prior-art candidates (human-supplied and, when the
+      // matter opted in with `ipfe run --search`, machine-retrieved from Google
+      // Patents). It never searches itself; the runner retrieves deterministically.
+      "ip-searcher": {
+        name: "ip-searcher",
+        workspace: "${HOME}/.openclaw/workspaces/ip-searcher",
+        agentDir: "${HOME}/.openclaw/agents/ip-searcher/agent",
+        identity: { name: "ip-searcher" },
+        model: "anthropic/claude-sonnet-5",
         tools: { profile: "minimal" },
       },
     },

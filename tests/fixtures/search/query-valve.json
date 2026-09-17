@@ -1,0 +1,52 @@
+{
+  "results": {
+    "total_num_results": 1423,
+    "cluster": [
+      {
+        "result": [
+          {
+            "patent": {
+              "title": "Self-purging <b>valve</b> core with compliant <b>seat</b>",
+              "snippet": " A <b>valve</b> core in which the poppet over-travels to open a purge gap &hellip;",
+              "priority_date": "2016-03-02",
+              "filing_date": "2017-03-01",
+              "grant_date": "2019-06-11",
+              "publication_date": "2019-06-11",
+              "inventor": "A. Fictional",
+              "assignee": "Northbridge Cycle Components",
+              "publication_number": "US1234567B2",
+              "language": "en"
+            }
+          },
+          {
+            "patent": {
+              "title": "Tyre valve with flexible elastomer seat",
+              "snippet": " The seat is an elastomeric ring retained in the body &hellip;",
+              "priority_date": "2018-06-09",
+              "filing_date": "2019-06-05",
+              "grant_date": "2021-03-03",
+              "publication_date": "2021-03-03",
+              "inventor": "B. Fictional",
+              "assignee": "Vellmar Reifentechnik GmbH",
+              "publication_number": "EP3456789B1",
+              "language": "en"
+            }
+          },
+          {
+            "patent": {
+              "title": "Sealant-resistant valve core with removable insert",
+              "snippet": " A removable sleeve captures sealant deposits &hellip;",
+              "priority_date": "2017-10-18",
+              "filing_date": "2017-10-18",
+              "publication_date": "2019-04-25",
+              "inventor": "C. Fictional",
+              "assignee": "",
+              "publication_number": "US2019012345A1",
+              "language": "en"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -67,6 +67,22 @@ _NOTIFIED: Final[frozenset[str]] = frozenset(
 )
 
 
+def _consensus(counts: Any) -> str:
+    """Trailing clause naming how the two reviewers split, when both of them ran.
+
+    Silent for a single-reviewer run: "0 agreed" would read as disagreement
+    rather than as the absence of a second opinion.
+    """
+    if not isinstance(counts, dict):
+        return ""
+    agreed = int(counts.get("consensus", 0) or 0)
+    a_only = int(counts.get("a_only", 0) or 0)
+    b_only = int(counts.get("b_only", 0) or 0)
+    if not (agreed or b_only):
+        return ""
+    return f" (reviewers: {agreed} agreed, {a_only} ip-reviewer only, {b_only} ip-reviewer-b only)"
+
+
 def _phase_label(phase: str | None) -> str:
     if not phase:
         return ""
@@ -98,6 +114,8 @@ _MILESTONES: Final[frozenset[str]] = frozenset(
         "call_failed",
         "contract_failed",
         "terminology_violation",
+        "search_completed",
+        "search_unavailable",
     }
 )
 
@@ -192,7 +210,7 @@ def format_event(
         return (
             f"{head}: independent review raised {n} critical/high finding(s) in [{cats}]; "
             f"loop-back cycle {detail.get('cycle')} routed to "
-            f"{', '.join(detail.get('route') or [])}."
+            f"{', '.join(detail.get('route') or [])}{_consensus(detail.get('consensus'))}."
         )
     if event == "loopback_cap_reached":
         return (
@@ -207,6 +225,16 @@ def format_event(
             return f"{head}: final filing package built at {detail.get('path')}."
         return (
             f"{head}: review package assembled (description, figures, claims only) for ip-reviewer."
+        )
+    if event == "search_completed":
+        return (
+            f"{head}: prior-art search done — {detail.get('queries')} queries sent to Google "
+            f"Patents, {detail.get('written')} candidate references retrieved for charting."
+        )
+    if event == "search_unavailable":
+        return (
+            f"{head}: prior-art search could not run ({detail.get('error')}); Phase 2 continues "
+            f"on the references supplied by hand, and the gap is recorded."
         )
     if event == "run_failed":
         return f"{head}: RUN FAILED in {_phase_label(phase)}: {detail.get('error')}"

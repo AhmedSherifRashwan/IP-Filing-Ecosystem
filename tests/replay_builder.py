@@ -21,7 +21,9 @@ from pathlib import Path
 from typing import Any
 
 from ecosystem.calls import call_ids
+from ecosystem.config import SECOND_REVIEWER
 from ecosystem.playbook import Playbook, PromptSpec
+from ecosystem.runner import REVIEW_PROMPTS, SECOND_REVIEWER_SUFFIX
 from tests.fakes import make_payload
 
 __all__ = [
@@ -36,6 +38,7 @@ __all__ = [
     "prose_reply",
     "reply_for",
     "review_reply",
+    "second_reviewer_key",
 ]
 
 # --------------------------------------------------------------------------
@@ -275,6 +278,18 @@ def fixture_key(
     return stem
 
 
+def second_reviewer_key(slug: str, prompt_id: str, version: int) -> str:
+    """The replay key of `ip-reviewer-b`'s copy of one review prompt.
+
+    The second reviewer's call carries slot `b`, so `32` becomes
+    `demo-review-32-b-v1` while its *output* is written as `32b`. The two must
+    differ: sharing a call id would share a run directory and, worse, a gateway
+    idempotency key, and the second reviewer would be served the first one's
+    cached reply.
+    """
+    return fixture_key(slug, "REVIEW", prompt_id, version, SECOND_REVIEWER_SUFFIX)
+
+
 @dataclass
 class Scenario:
     """Per-fixture overrides, keyed by replay key (`demo-review-32-v1`)."""
@@ -311,6 +326,9 @@ def materialise(playbook: Playbook, out_dir: Path, scenario: Scenario) -> dict[s
             combinations.append(("P5", spec, "claims-2"))
         if spec.id in {"37", "38", "40a"}:
             combinations.append((spec.phase, spec, "recheck"))
+        if spec.id in REVIEW_PROMPTS:
+            # The second reviewer's copy of the same prompt, same blind package.
+            combinations.append((spec.phase, spec, SECOND_REVIEWER_SUFFIX))
         if spec.id == "x-gate-brief":
             for gate in ("1", "2", "3"):
                 combinations.append((spec.phase, spec, f"gate-{gate}"))
@@ -318,23 +336,34 @@ def materialise(playbook: Playbook, out_dir: Path, scenario: Scenario) -> dict[s
                 combinations.append((spec.phase, spec, f"gate-loopback-cap-{category}"))
 
     for phase, spec, slot in combinations:
+        second = slot == SECOND_REVIEWER_SUFFIX and spec.id in REVIEW_PROMPTS
+        agent = SECOND_REVIEWER if second else spec.agent
         for version in range(1, scenario.max_version + 1):
             key = fixture_key(scenario.slug, phase, spec.id, version, slot)
-            overrides = scenario.overrides.get(key, {})
-            text = reply_for(spec, **overrides)
+            overrides = scenario.overrides.get(key)
+            if overrides is None and second:
+                # By default the second reviewer finds what the first one found:
+                # the interesting scenarios are the ones a test states explicitly
+                # (`.at(second_reviewer_key(...), findings=[...])`), and a silent
+                # default of "B found nothing" would make every consensus
+                # assertion in the suite pass for the wrong reason.
+                overrides = scenario.overrides.get(
+                    fixture_key(scenario.slug, phase, spec.id, version)
+                )
+            text = reply_for(spec, **(overrides or {}))
             path = out_dir / f"{key}.json"
             path.write_text(
                 json.dumps(
                     {
                         "call_id": key,
-                        "agent_id": spec.agent,
-                        "session_key": f"agent:{spec.agent}:{key}",
+                        "agent_id": agent,
+                        "session_key": f"agent:{agent}:{key}",
                         "prompt_sha256": "",
                         "response": make_payload(
                             text,
                             run_id=f"run-{key}",
                             provider="fake",
-                            model=f"fake/{spec.agent}",
+                            model=f"fake/{agent}",
                         ),
                     },
                     indent=2,

@@ -132,12 +132,55 @@ Then relaunch with `ipfe run --matter <slug> --background --notify <your session
 automatically. (Always pass `--notify` on a relaunch: a matter opened before you
 had a session key has none stored.)
 
-## 6. When it finishes
+## 6. When it finishes (Gate 3 reached)
 
-Report where the matter stands, what the reviewer left open, and what each
-gate confirmed. Give the file paths in `07-package/`: abstract, description,
-figures, claims, support matrix, filing checklist, cover memo. Say once, plainly,
-that the package is a draft for counsel to review and sign off, not a filing.
+The Gate 3 update is the findings report. Read the brief with the `read` tool
+and give the substance in one reply: what the two independent reviewers agreed
+on (consensus findings) versus what only one raised, what remains open, which
+gates were auto-accepted, and the package paths in `07-package/` (abstract,
+description, figures, claims, support matrix, machine support check, filing
+checklist, gate decisions, cover memo) plus the evidence pack under
+`evidence/`. Say once, plainly, that the package is a draft for counsel to
+review and sign off, not a filing.
+
+Then offer the **inventor interview**: an unattended run answered no Gate 1
+questions, and the disclosure is the one thing that improves everything
+downstream. Run
+
+```bash
+/opt/homebrew/bin/uv run ipfe questions \
+  --matter <slug> --top 10
+```
+
+and put those ten questions to the person in one message, numbered, with the
+one-line `why` each. Collect their answers **verbatim** (unanswered ones stay
+unanswered — never fill them in), file them with `ipfe intake --matter <slug>
+--kind answers --stdin` exactly as in section 2, and relaunch a second pass
+from Phase 2 (or Phase 1 if an answer changes what the invention is):
+
+```bash
+cd /Users/ahmed/IP-Filing-Ecosystem && /opt/homebrew/bin/uv run ipfe run \
+  --matter <slug> --from P2 --background --unattended --notify <your session key>
+```
+
+The second pass opens new versions; nothing from the first pass is overwritten.
+
+## 7. Prior-art search (opt-in only)
+
+By default Phase 2 charts only references the person supplies. If they have
+none, or ask for a search, explain in one sentence that the search sends only
+the Prompt-06 search strings (never the disclosure text) to Google Patents, a
+third-party service, and retrieves candidate references marked
+MACHINE-RETRIEVED for the searcher agent to triage. Only after they say yes,
+launch or relaunch with `--search`:
+
+```bash
+cd /Users/ahmed/IP-Filing-Ecosystem && /opt/homebrew/bin/uv run ipfe run \
+  --matter <slug> --background --unattended --search --notify <your session key>
+```
+
+Never add `--search` without that yes. A professional search is still required
+before filing; say so when reporting the results.
 
 ## What not to do
 

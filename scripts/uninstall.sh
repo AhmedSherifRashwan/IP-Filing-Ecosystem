@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# scripts/uninstall.sh — remove the seven IP Filing Ecosystem agents from OpenClaw.
+# scripts/uninstall.sh — remove the eight IP Filing Ecosystem agents from OpenClaw.
 #
-# Removes agents.entries.<id> for the seven ids (config is backed up first) and
+# Removes agents.entries.<id> for the eight ids (config is backed up first) and
 # restarts the gateway. Workspaces and agent dirs are left on disk unless
 # --purge is given.
 #
@@ -17,7 +17,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OPENCLAW="${OPENCLAW_BIN:-$HOME/.openclaw/bin/openclaw}"
 OC_HOME="$HOME/.openclaw"
 CONFIG="$OC_HOME/openclaw.json"
-AGENT_IDS=(patentcounsel ip-disclosure ip-prior-art ip-embodiment ip-spec ip-claims ip-reviewer)
+AGENT_IDS=(patentcounsel ip-disclosure ip-prior-art ip-embodiment ip-spec ip-claims ip-reviewer ip-reviewer-b ip-searcher)
 
 PURGE=0
 for arg in "$@"; do

@@ -26,7 +26,7 @@ from typing import Any, Final
 
 from ecosystem import loopback, package
 from ecosystem.calls import AttemptContext, Caller, CallResult, section_body
-from ecosystem.config import Settings
+from ecosystem.config import REVIEW_AGENTS, SECOND_REVIEWER, Settings
 from ecosystem.contracts import Correction, Finding
 from ecosystem.dossier import Dossier, InputContext, VersionDir
 from ecosystem.gates import Gates
@@ -59,6 +59,26 @@ class StopReason(StrEnum):
     FAILED = "failed"
 
 
+@dataclass(frozen=True)
+class PromptJob:
+    """One prompt to run, and the identity the result is written under.
+
+    Normally `output_id == prompt_id` and the rest is unset. The exceptions are
+    the formal recheck (`37` -> `37r`) and the second reviewer (`32` -> `32b`,
+    addressed to `ip-reviewer-b`), where the same prompt file is run more than
+    once into one version and the results must stay distinguishable.
+    """
+
+    prompt_id: str
+    output_id: str
+    slot: str | None = None
+    agent: str | None = None
+    # Which reviewer's chain of outputs this job belongs to. Jobs in different
+    # lanes never depend on one another, which is what keeps the two reviewers
+    # independent even if a review prompt ever gains an `out:REVIEW/<id>` input.
+    lane: str = ""
+
+
 # Phase prompt lists. These are the playbook's sequences, and they are the only
 # place the order is written down.
 P1_PROMPTS: Final[tuple[str, ...]] = ("01", "02", "03", "04", "05")
@@ -79,6 +99,12 @@ P5_ROUND1: Final[tuple[str, ...]] = ("21", "22", "23", "24", "25", "26", "27")
 # Round 2+: revise, do not restart.
 P4_REVISE: Final[tuple[str, ...]] = ("x-p4-revise", "17", "20a")
 P5_REVISE: Final[tuple[str, ...]] = ("x-p5-revise", "25")
+
+# Every review prompt runs twice, once per independent reviewer. The second
+# reviewer's outputs are written as `<id>b` (`32b`, `40ab`) and its calls carry
+# slot `b`, so the two never collide on an output file, a run directory or - and
+# this is the one that would be silent - a gateway idempotency key.
+SECOND_REVIEWER_SUFFIX: Final[str] = "b"
 
 REVIEW_PROMPTS: Final[tuple[str, ...]] = (
     "28",
@@ -209,6 +235,8 @@ class Runner:
             by="auto-unattended",
             note="auto-accepted by the runner in unattended mode; not human-confirmed",
         )
+        # decide() leaves the matter "idle" (ready to run); this run is still going.
+        self.state.status = "running"
         self._save()
 
     # -- entry point --------------------------------------------------------
@@ -286,7 +314,7 @@ class Runner:
         handlers = {
             "P1": lambda: self._phase_stage("P1", P1_PROMPTS),
             "gate1": lambda: self._gate_stage("1"),
-            "P2": lambda: self._phase_stage("P2", P2_PROMPTS),
+            "P2": self._phase2_stage,
             "P3": lambda: self._phase_stage("P3", P3_PROMPTS),
             "gate2": lambda: self._gate_stage("2"),
             "inner": self._inner_loop,
@@ -312,6 +340,63 @@ class Runner:
         self._force_from = None
         return None
 
+    def _phase2_stage(self) -> StopReason | None:
+        """Phase 2, with the opt-in prior-art search between Prompt 06 and 07.
+
+        The search sends only Prompt-06 search strings to Google Patents and
+        writes machine-retrieved candidates into 00-intake/prior-art/, which
+        Prompt 07 then charts. It runs only when the matter opted in.
+        """
+        phase_state = self.state.phase("P2")
+        forced = self._force_from == FROM_STAGE.get("P2")
+        if phase_state.status == "complete" and not forced:
+            return None
+        if not getattr(self.state, "search", False):
+            return self._phase_stage("P2", P2_PROMPTS)
+        self.events.emit("phase_started", phase="P2", prompts=[*P2_PROMPTS, "x-search-triage"])
+        version = self._open_version("P2", "initial" if not forced else "manual-rerun")
+        self._run_prompts("P2", version, ("06",))
+        self._prior_art_search(version)
+        self._run_prompts("P2", version, ("x-search-triage",))
+        self._run_prompts("P2", version, ("07", "08", "09", "10"))
+        self._complete_version("P2", version)
+        self._force_from = None
+        return None
+
+    def _prior_art_search(self, version: VersionDir) -> None:
+        from ecosystem import search as search_module  # local: network module
+
+        record = self._version_record("P2", version)
+        if "search" in record.prompts_done:
+            return
+        try:
+            run = search_module.run_search(
+                self.dossier,
+                max_queries=int(getattr(self.settings, "search_max_queries", 6)),
+                per_query=10,
+                max_candidates=int(getattr(self.settings, "search_max_candidates", 10)),
+                sleep_s=float(getattr(self.settings, "search_sleep_s", 2.0)),
+            )
+        except search_module.SearchUnavailable as exc:
+            # The search is an aid; Phase 2 must still run on what the human
+            # supplied. The gap is recorded so the reviewer and counsel see it.
+            log.warning("prior-art search unavailable: %s", exc)
+            self.events.emit("search_unavailable", phase="P2", error=str(exc), prompt="search")
+            record.prompts_done.append("search")
+            self._save()
+            return
+        self.events.emit(
+            "search_completed",
+            phase="P2",
+            prompt="search",
+            queries=len(run.queries),
+            candidates=len(run.candidates),
+            written=len(run.files),
+            errors=len(run.errors),
+        )
+        record.prompts_done.append("search")
+        self._save()
+
     def _run_prompts(
         self,
         phase: str,
@@ -320,75 +405,109 @@ class Runner:
         ctx_factory: Any = None,
         slot: str | None = None,
         output_ids: dict[str, str] | None = None,
+        extra_jobs: tuple[PromptJob, ...] = (),
     ) -> list[CallResult]:
         """Run a list of prompts into one version, skipping what is already there.
 
         Prompts that do not depend on each other (their inputs name no sibling
         output in this phase) run concurrently, up to `max_parallel_calls`.
         The Caller serialises every state, log and dossier write; only the
-        gateway wait overlaps. Results come back in prompt order.
+        gateway wait overlaps. Results come back in job order.
+
+        `extra_jobs` carries the same-version repeats that are not one-prompt-
+        one-output: today, the second reviewer's copy of every review prompt.
+        They join the same dependency levels, so both reviewers go out in one
+        parallel batch rather than one after the other.
         """
         record = self._version_record(phase, version)
-        todo: list[tuple[str, str]] = []
-        for prompt_id in prompts:
-            output_id = (output_ids or {}).get(prompt_id, prompt_id)
-            if output_id in record.prompts_done or _output_exists(version.path, output_id):
-                log.info("skipping %s: already in %s", output_id, version.path.name)
+        jobs = [
+            PromptJob(prompt_id, (output_ids or {}).get(prompt_id, prompt_id), slot)
+            for prompt_id in prompts
+        ]
+        jobs.extend(extra_jobs)
+        todo: list[PromptJob] = []
+        for job in jobs:
+            if job.output_id in record.prompts_done or _output_exists(version.path, job.output_id):
+                log.info("skipping %s: already in %s", job.output_id, version.path.name)
                 continue
-            todo.append((prompt_id, output_id))
+            todo.append(job)
 
-        def one(prompt_id: str, output_id: str) -> CallResult:
-            spec = self.playbook.get(prompt_id)
+        def one(job: PromptJob) -> CallResult:
+            spec = self.playbook.get(job.prompt_id)
             ctx = ctx_factory(spec) if ctx_factory else AttemptContext()
             ctx.allow_truncate = ctx.allow_truncate or self.allow_truncate
-            if slot is not None and ctx.slot is None:
-                ctx.slot = slot
-            if output_id != prompt_id:
-                ctx.output_prompt_id = output_id
+            if job.slot is not None and ctx.slot is None:
+                ctx.slot = job.slot
+            if job.output_id != job.prompt_id:
+                ctx.output_prompt_id = job.output_id
+            if job.agent is not None:
+                ctx.agent_override = job.agent
             with self.caller.lock:
                 self.state.cursor.phase = phase
             result = self.caller.execute(spec, version.v, ctx)
             with self.caller.lock:
-                record.prompts_done.append(output_id)
+                record.prompts_done.append(job.output_id)
                 self._save()
             return result
 
         results: list[CallResult] = []
         workers = max(1, int(getattr(self.settings, "max_parallel_calls", 1)))
-        for level in self._levels(phase, [p for p, _ in todo]):
-            items = [(p, o) for p, o in todo if p in level]
+        levels = self._levels(
+            phase,
+            [job.output_id for job in todo],
+            source={job.output_id: job.prompt_id for job in todo},
+            lanes={job.output_id: job.lane for job in todo},
+        )
+        for level in levels:
+            items = [job for job in todo if job.output_id in level]
             if len(items) == 1 or workers == 1:
-                for prompt_id, output_id in items:
-                    results.append(one(prompt_id, output_id))
+                results.extend(one(job) for job in items)
                 continue
-            log.info("running %s in parallel: %s", phase, ", ".join(p for p, _ in items))
+            log.info("running %s in parallel: %s", phase, ", ".join(job.output_id for job in items))
             with ThreadPoolExecutor(max_workers=min(workers, len(items))) as pool:
-                futures = {pool.submit(one, p, o): p for p, o in items}
+                futures = {pool.submit(one, job): job.output_id for job in items}
                 done: dict[str, CallResult] = {}
                 errors: list[BaseException] = []
-                for future, prompt_id in futures.items():
+                for future, output_id in futures.items():
                     try:
-                        done[prompt_id] = future.result()
+                        done[output_id] = future.result()
                     except BaseException as exc:  # noqa: BLE001 - re-raised below
                         errors.append(exc)
                 if errors:
                     raise errors[0]
-            results.extend(done[p] for p, _ in items)
+            results.extend(done[job.output_id] for job in items)
         return results
 
-    def _levels(self, phase: str, prompts: list[str]) -> list[list[str]]:
-        """Group prompts into dependency levels from their `out:<phase>/<id>` inputs."""
-        ids = set(prompts)
+    def _levels(
+        self,
+        phase: str,
+        prompts: list[str],
+        source: dict[str, str] | None = None,
+        lanes: dict[str, str] | None = None,
+    ) -> list[list[str]]:
+        """Group output ids into dependency levels from their `out:<phase>/<id>` inputs.
+
+        `prompts` are output ids, which are prompt ids in every case but the
+        repeats: `source` maps `32b` back to prompt `32`, and `lanes` says which
+        chain it belongs to. A dependency is resolved *within the lane*, so the
+        second reviewer's `33b` could only ever wait on its own `32b`, never on
+        the first reviewer's `32`. The two reviewers must not be able to read
+        each other, and the safest way to guarantee that is for the scheduler
+        never to connect them in the first place.
+        """
+        source = source or {}
+        lanes = lanes or {}
+        in_lane = {(lanes.get(o, ""), source.get(o, o)): o for o in prompts}
         deps: dict[str, set[str]] = {}
-        for prompt_id in prompts:
-            spec = self.playbook.get(prompt_id)
+        for output_id in prompts:
+            spec = self.playbook.get(source.get(output_id, output_id))
             wanted: set[str] = set()
             for item in [*spec.inputs, *spec.optional_inputs]:
                 if item.startswith(f"out:{phase}/"):
-                    dep = item.split("/", 1)[1]
-                    if dep in ids and dep != prompt_id:
+                    dep = in_lane.get((lanes.get(output_id, ""), item.split("/", 1)[1]))
+                    if dep is not None and dep != output_id:
                         wanted.add(dep)
-            deps[prompt_id] = wanted
+            deps[output_id] = wanted
         levels: list[list[str]] = []
         finished: set[str] = set()
         remaining = list(prompts)
@@ -649,6 +768,7 @@ class Runner:
                     phase="REVIEW",
                     routed=[],
                     counts=loopback.counts(findings),
+                    consensus=loopback.consensus_summary(findings)["counts"],
                 )
                 return None
             if plan.capped:
@@ -669,7 +789,7 @@ class Runner:
                     continue
                 return StopReason.CAP
 
-            event = self._start_route(plan, version)
+            event = self._start_route(plan, version, findings)
             reason = self._run_route(event)
             if reason is not None:
                 return reason
@@ -693,7 +813,14 @@ class Runner:
         return plan
 
     def _review_round(self) -> VersionDir:
-        """Build the package and run the twelve review prompts into one version."""
+        """Build the package and run the twelve review prompts, once per reviewer.
+
+        Both reviewers see the same bytes - the same blind package, the same
+        prompt files - and neither is told the other ran. They go out in one
+        parallel batch because there is nothing for either to wait for, and
+        because a serial second review would double the wall-clock cost of the
+        slowest stage in the pipeline for no benefit.
+        """
         version = self._open_version("REVIEW", self._review_trigger())
         if self._inner_loop_flags:
             self.dossier.write_file(
@@ -705,11 +832,46 @@ class Runner:
         self.caller.cross_check()
         package_dir = package.build_review_package(self.dossier, self.state, version.v)
         self.events.emit("package_built", phase="REVIEW", path=package_dir, kind="review")
-        self.events.emit("phase_started", phase="REVIEW", prompts=list(REVIEW_PROMPTS))
+        second = self._second_reviewer_jobs()
+        self.events.emit(
+            "phase_started",
+            phase="REVIEW",
+            prompts=[*REVIEW_PROMPTS, *(job.output_id for job in second)],
+            reviewers=self._reviewers(),
+        )
         self._run_prompts(
-            "REVIEW", version, REVIEW_PROMPTS, self._review_ctx(package_dir, version.v)
+            "REVIEW",
+            version,
+            REVIEW_PROMPTS,
+            self._review_ctx(package_dir, version.v),
+            extra_jobs=second,
         )
         return version
+
+    def _second_reviewer_jobs(self) -> tuple[PromptJob, ...]:
+        """`ip-reviewer-b`'s copy of every review prompt, or nothing when disabled.
+
+        Only the main review round is doubled. The formal-fix rechecks
+        (`37r`/`38r`/`40ar`) and the clean-review prompts (39, gate14, 40) stay
+        with the first reviewer: they confirm a fix or fill in a checklist
+        against text nobody disputes, and a second opinion there would cost a
+        call per prompt to answer a question nobody asked.
+        """
+        if not self.settings.second_reviewer:
+            return ()
+        return tuple(
+            PromptJob(
+                prompt_id=prompt_id,
+                output_id=f"{prompt_id}{SECOND_REVIEWER_SUFFIX}",
+                slot=SECOND_REVIEWER_SUFFIX,
+                agent=SECOND_REVIEWER,
+                lane=SECOND_REVIEWER_SUFFIX,
+            )
+            for prompt_id in REVIEW_PROMPTS
+        )
+
+    def _reviewers(self) -> list[str]:
+        return list(REVIEW_AGENTS) if self.settings.second_reviewer else [REVIEW_AGENTS[0]]
 
     def _review_ctx(self, package_dir: Path, review_version: int) -> Any:
         def factory(spec: PromptSpec) -> AttemptContext:
@@ -740,6 +902,8 @@ class Runner:
         entry.counts = loopback.counts(findings)
         entry.open_categories = loopback.open_categories(findings)
         entry.gate14_passed = self._gate14_passed(version)
+        entry.reviewers = self._reviewers()
+        entry.consensus = loopback.consensus_summary(findings)["counts"]
         self._save()
 
     def _gate14_passed(self, version: VersionDir) -> bool | None:
@@ -851,7 +1015,9 @@ class Runner:
 
     # -- routing ------------------------------------------------------------
 
-    def _start_route(self, plan: loopback.RoutePlan, version: VersionDir) -> LoopbackEvent:
+    def _start_route(
+        self, plan: loopback.RoutePlan, version: VersionDir, findings: list[Finding] | None = None
+    ) -> LoopbackEvent:
         cycle = (
             max(
                 (self.state.loopback.cycles.get(category, 0) for category in plan.categories),
@@ -880,6 +1046,8 @@ class Runner:
             cycle=cycle,
             route=plan.steps,
             findings=event.finding_ids,
+            consensus=loopback.consensus_summary(findings or [])["counts"],
+            single_reviewer=plan.single_reviewer_highs,
         )
         self._save()
         return event

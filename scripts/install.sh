@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
-# scripts/install.sh — install the seven IP Filing Ecosystem agents into OpenClaw.
+# scripts/install.sh — install the eight IP Filing Ecosystem agents into OpenClaw.
 #
 # Idempotent: re-running with nothing changed copies nothing and re-applies an
 # identical patch. Never touches memory/ or any other file in a workspace, and
 # never touches existing agents.entries.
 #
 # Usage:
-#   scripts/install.sh            install / update
-#   scripts/install.sh --check    report what would change; changes nothing
+#   scripts/install.sh              install / update
+#   scripts/install.sh --check      report what would change; changes nothing
+#   scripts/install.sh --no-restart install / update, but leave the gateway alone
+#
+# USE --no-restart WHEN A MATTER IS MID-RUN. `openclaw config patch` reports
+# that new `agents.entries` are picked up without a restart; restarting the
+# gateway would kill any in-flight agent call, and an ipfe run that loses a call
+# resumes by re-issuing it — paying for the same 20-minute review twice, or
+# worse, stopping at a half-written phase version. A restart is only needed for
+# changes to an *existing* agent's model or tools, so after adding a reviewer
+# you can install now and restart at the next quiet moment.
 #
 # Env:
 #   OPENCLAW_BIN   path to the openclaw CLI (default: ~/.openclaw/bin/openclaw)
@@ -20,16 +29,18 @@ CONFIG="$OC_HOME/openclaw.json"
 PATCH_SRC="$REPO/openclaw/openclaw.patch.json5"
 PATCH_RENDERED="$REPO/openclaw/.rendered.patch.json5"
 
-AGENT_IDS=(patentcounsel ip-disclosure ip-prior-art ip-embodiment ip-spec ip-claims ip-reviewer)
+AGENT_IDS=(patentcounsel ip-disclosure ip-prior-art ip-embodiment ip-spec ip-claims ip-reviewer ip-reviewer-b ip-searcher)
 WORKSPACE_FILES=(SOUL.md AGENTS.md IDENTITY.md)
 PER_FILE_CAP=20000     # OpenClaw bootstrapMaxChars default
 WORKSPACE_CAP=60000    # per-workspace bootstrap total
 
 CHECK=0
+RESTART=1
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK=1 ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    --no-restart) RESTART=0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -172,7 +183,7 @@ if [ -n "$OPENCLAW" ]; then
   agents_json="$("$OPENCLAW" agents list --json 2>/dev/null || echo '[]')"
   missing="$(check_agents "$agents_json" | tr '\n' ' ' | sed 's/ *$//')"
   if [ -z "$missing" ]; then
-    say "   all seven ids registered: ${AGENT_IDS[*]}"
+    say "   all ${#AGENT_IDS[@]} ids registered: ${AGENT_IDS[*]}"
   elif [ "$CHECK" = 1 ]; then
     say "   not yet registered (will be added by the patch): $missing"
   else
@@ -182,7 +193,11 @@ fi
 
 # ------------------------------------------------------------- 7. gateway
 step "7. Gateway"
-if [ "$CHECK" = 1 ]; then
+if [ "$RESTART" = 0 ]; then
+  say "   --no-restart: gateway left running. New agents.entries apply without a"
+  say "   restart; a change to an existing agent's model or tools does not, so"
+  say "   run 'openclaw gateway restart' once no matter is mid-call."
+elif [ "$CHECK" = 1 ]; then
   would "openclaw gateway restart; poll gateway health up to 60 s"
 else
   "$OPENCLAW" gateway restart

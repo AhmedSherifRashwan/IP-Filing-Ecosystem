@@ -25,6 +25,7 @@ __all__ = [
     "Gate14Answer",
     "ParsedReply",
     "ReviewEnvelope",
+    "Severity",
     "deliverable_only",
     "envelope_model_for",
     "extract_json_object",
@@ -152,6 +153,14 @@ class Finding(_Envelope):
     least_narrowing_action: str
     requires_new_disclosure: bool = False
     suggested_target: Literal["P3", "P4", "P5", "in-place"]
+
+    # Filled in by `loopback.aggregate`, never by an agent. A reviewer is not
+    # told the other reviewer exists, so it cannot report agreement; agreement
+    # is a fact about the merge, computed from two envelopes that were produced
+    # independently. Defaults keep every envelope and every findings.json
+    # written before the second reviewer existed valid.
+    reviewers: list[str] = Field(default_factory=list)
+    consensus: bool = False
 
 
 class Correction(_Envelope):

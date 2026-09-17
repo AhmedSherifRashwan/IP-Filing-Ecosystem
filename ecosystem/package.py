@@ -10,23 +10,30 @@ frontmatter raises `BlindnessViolation` and the run stops.
 `build_final_package()` assembles what a human hands to qualified patent
 counsel. It is deliberately dull: copy the reviewed text, copy the reviewer's
 matrices verbatim, list every residual finding including the ones nobody fixed,
-and never imply that anything here clears the application for filing.
+and never imply that anything here clears the application for filing. It ends by
+freezing an evidence pack (`evidence.py`) and anchoring its root hash
+(`ledger.py`); both are best-effort and neither may ever block a package.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from ecosystem import evidence as evidence_module
+from ecosystem import ledger as ledger_module
+from ecosystem import state as state_module
 from ecosystem.calls import section_body
 from ecosystem.contracts import Finding, deliverable_only
 from ecosystem.dossier import Dossier, sha256_text, split_frontmatter
 from ecosystem.loopback import SEVERE, load_findings
 from ecosystem.state import MatterState
+from ecosystem.support_check import check_support
 
 log = logging.getLogger("ipfe")
 
@@ -34,6 +41,8 @@ __all__ = [
     "BlindnessViolation",
     "PackageError",
     "REVIEW_MEMBERS",
+    "anchor_evidence",
+    "anchor_root_hash",
     "build_final_package",
     "build_review_package",
     "write_cover_memo",
@@ -271,6 +280,10 @@ def build_final_package(
         if member is not None:
             members.append(member)
 
+    support = _support_check(dossier, target)
+    if support is not None:
+        members.append(support)
+
     members.append(_gate14(dossier, review.path, target / "gate-14.md"))
     members.append(_residuals(dossier, state, review.path, target / "residual-findings.md"))
     members.append(_gate_decisions(dossier, state, target / "gate-decisions.md"))
@@ -283,6 +296,8 @@ def build_final_package(
         )
     )
 
+    members.append(_evidence_member(dossier, package_version))
+
     manifest = {
         "built_at": _now(),
         "matter": dossier.slug,
@@ -294,6 +309,9 @@ def build_final_package(
         "members": members,
     }
     (target / "MANIFEST.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    # Last, so the pack hashes the finished manifest as well as the members.
+    anchor_evidence(dossier, state, target)
     return target
 
 
@@ -316,7 +334,135 @@ def write_cover_memo(dossier: Dossier, package_dir: Path, text: str) -> Path:
                 member["sha256"] = sha256_text(body)
                 member["chars"] = len(body)
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    # The memo and the manifest have both just changed, so the evidence pack
+    # built at the end of `build_final_package` now describes files that no
+    # longer exist in that form. Re-freeze it rather than ship a pack whose own
+    # verification fails.
+    _refresh_evidence(dossier, package_dir)
     return path
+
+
+# ---------------------------------------------------------------------------
+# support check and evidence pack
+# ---------------------------------------------------------------------------
+
+
+def _support_check(dossier: Dossier, target: Path) -> dict[str, Any] | None:
+    """Deterministic claim-support table over the text this package actually carries.
+
+    Run on the packaged copies, not on the phase outputs: the point is to say
+    something about the bytes counsel receives. It is advisory - an unsupported
+    row is a question for a human, never a reason to withhold the package - and
+    it never replaces the reviewer's Prompt 28 matrix, which is packaged beside
+    it.
+    """
+    description = target / "description.md"
+    claims = target / "claims.md"
+    if not (description.is_file() and claims.is_file()):
+        log.warning("no description/claims in %s; support check not packaged", target)
+        return None
+    try:
+        report = check_support(
+            description.read_text(encoding="utf-8"), claims.read_text(encoding="utf-8")
+        )
+    except Exception as exc:  # deliberately broad: an advisory check cannot block
+        log.warning("support check failed (%s); packaging without it", exc)
+        return None
+    member = _write(
+        target / "support-check.md",
+        report.to_markdown("Claim support check (deterministic, advisory)"),
+        "ecosystem/support_check.py over description.md + claims.md",
+        dossier,
+    )
+    member["unsupported_limitations"] = report.unsupported_count
+    return member
+
+
+def _evidence_member(dossier: Dossier, package_version: int) -> dict[str, Any]:
+    """The MANIFEST entry pointing at the pack. The pack carries its own hashes."""
+    directory = evidence_module.evidence_dir_for(dossier, package_version)
+    return {
+        "name": "evidence",
+        "source": "ecosystem/evidence.py",
+        "path": str(directory.relative_to(dossier.root)),
+        "sha256": "",
+        "chars": 0,
+        "note": (
+            "chain of custody for this package: sha256 of every intake file, phase "
+            f"output, prompt, reply and member, plus the root hash. Verify with "
+            f"`ipfe evidence --matter {dossier.slug} --verify`."
+        ),
+    }
+
+
+def anchor_evidence(dossier: Dossier, state: MatterState, target: Path) -> Path | None:
+    """Freeze the evidence pack and anchor its root hash. Never raises.
+
+    Packaging is the point of the run; evidence is what makes the package
+    defensible later. If the second fails, the first still has to be delivered -
+    loudly, in the log, but delivered.
+    """
+    if not _enabled(dossier, "evidence_pack", "IPFE_EVIDENCE"):
+        log.info("evidence pack disabled by configuration")
+        return None
+    try:
+        directory = evidence_module.build_evidence(dossier, state, target)
+    except Exception as exc:  # deliberately broad: evidence never blocks a package
+        log.warning("evidence pack failed for %s: %s", target, exc)
+        return None
+    try:
+        anchor_root_hash(dossier, directory)
+    except Exception as exc:  # deliberately broad: so does anchoring
+        log.warning("evidence ledger failed for %s: %s", directory, exc)
+    return directory
+
+
+def anchor_root_hash(dossier: Dossier, directory: Path) -> None:
+    """Append the pack's root hash to the repository ledger, if the repo owns it.
+
+    A dossier outside the repository (a test, or a relocated `IPFE_DOSSIERS_DIR`)
+    is deliberately not anchored: the ledger's whole value is that it is
+    committed alongside the code that produced it, and writing into somebody
+    else's checkout would be a surprise.
+    """
+    if not _enabled(dossier, "evidence_ledger", "IPFE_LEDGER"):
+        log.info("evidence ledger disabled by configuration")
+        return
+    repo_root = Path(getattr(dossier.settings, "repo_root", dossier.root)).resolve()
+    try:
+        dossier.root.resolve().relative_to(repo_root)
+    except ValueError:
+        log.info("dossier %s is outside %s; not anchoring in the ledger", dossier.root, repo_root)
+        return
+    manifest_path = directory / evidence_module.MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    ledger_module.append_ledger(
+        repo_root,
+        dossier.slug,
+        int(manifest.get("package_version") or 0),
+        str(manifest.get("dossier_root_hash") or ""),
+        str(manifest.get("built_at") or _now()),
+        manifest_path=manifest_path,
+    )
+
+
+def _refresh_evidence(dossier: Dossier, package_dir: Path) -> None:
+    """Rebuild the pack for a package whose contents changed after it was built."""
+    if not (package_dir / "MANIFEST.json").is_file():
+        return
+    try:
+        state = state_module.load(dossier.state_path)
+    except Exception as exc:  # deliberately broad: a refresh is best effort
+        log.warning("cannot reload state to refresh the evidence pack: %s", exc)
+        return
+    anchor_evidence(dossier, state, package_dir)
+
+
+def _enabled(dossier: Dossier, setting: str, env: str) -> bool:
+    """Config first (the other half of the runner may grow the flag), env second."""
+    if not bool(getattr(dossier.settings, setting, True)):
+        return False
+    return os.environ.get(env, "").strip().lower() not in {"0", "off", "false", "no"}
 
 
 def _newest_review(dossier: Dossier) -> Any:
@@ -438,8 +584,14 @@ def _residuals(
     lines = [
         "# Residual findings",
         "",
-        "Findings the independent reviewer raised that are still open in this "
+        "Findings the independent reviewers raised that are still open in this "
         "package. Nothing here has been fixed; each is for counsel to weigh.",
+        "",
+        "The reviewer-agreement column says how much weight the finding carries: "
+        "`consensus` means both reviewers, on different model families and blind "
+        "to each other, raised it separately. A single-reviewer finding is one "
+        "model's reading, and a single-reviewer high is a lead the runner "
+        "deliberately did not spend a loop-back cycle on.",
     ]
     lines += _finding_table("Accepted at a loop-back cap decision (critical/high)", forced)
     lines += _finding_table("Still open (critical/high)", unresolved)
@@ -462,16 +614,29 @@ def _finding_table(title: str, findings: list[Finding]) -> list[str]:
         "",
         f"## {title}",
         "",
-        "| id | severity | category | claims / paragraphs | finding | least-narrowing action |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| id | severity | category | reviewer agreement | claims / paragraphs | finding "
+        "| least-narrowing action |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for finding in findings:
         refs = ", ".join([*finding.claim_refs, *finding.spec_refs]) or "-"
         lines.append(
-            f"| {finding.id} | {finding.severity} | {finding.category} | {refs} | "
+            f"| {finding.id} | {finding.severity} | {finding.category} | "
+            f"{_agreement(finding)} | {refs} | "
             f"{_cell(finding.title)} | {_cell(finding.least_narrowing_action)} |"
         )
     return lines
+
+
+def _agreement(finding: Finding) -> str:
+    """`consensus`, `<reviewer> only`, or `-` for a pre-two-reviewer findings.json."""
+    reviewers = list(getattr(finding, "reviewers", []) or [])
+    if getattr(finding, "consensus", False) or len(reviewers) > 1:
+        return "consensus"
+    if not reviewers:
+        return "-"
+    tag = f"{reviewers[0]} only"
+    return f"{tag} (single-reviewer)" if finding.severity in SEVERE else tag
 
 
 def _cell(text: str) -> str:

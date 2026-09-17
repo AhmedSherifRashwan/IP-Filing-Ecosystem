@@ -6,7 +6,15 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from ecosystem.config import AGENT_IDS, PHASE_AGENT, PHASES, Settings, phase_dir_name
+from ecosystem.config import (
+    AGENT_IDS,
+    PHASE_AGENT,
+    PHASES,
+    REVIEW_AGENTS,
+    SECOND_REVIEWER,
+    Settings,
+    phase_dir_name,
+)
 from ecosystem.log import EventLog
 
 
@@ -72,13 +80,34 @@ def test_resolve_openclaw_bin_fails_loudly(tmp_path: Path) -> None:
 
 
 def test_constants_are_consistent() -> None:
-    assert len(AGENT_IDS) == 7
     assert set(PHASE_AGENT) == set(PHASES)
     assert set(PHASE_AGENT.values()) <= set(AGENT_IDS)
+    assert len(AGENT_IDS) == len(set(AGENT_IDS))
     assert PHASES["REVIEW"] == "06-review"
     assert phase_dir_name("P4") == "04-specification"
     with pytest.raises(ValueError):
         phase_dir_name("P9")
+
+
+def test_both_reviewers_are_registered_and_review_stays_owned_by_the_first() -> None:
+    """The second reviewer is an extra opinion, not a second owner of the phase.
+
+    `PHASE_AGENT["REVIEW"]` is what the dossier, the notifier and the gate
+    refusal list read to answer "whose phase is this"; one phase has one owner.
+    `ip-reviewer-b` is reached only through `AttemptContext.agent_override`.
+    """
+    assert REVIEW_AGENTS == ("ip-reviewer", "ip-reviewer-b")
+    assert SECOND_REVIEWER == "ip-reviewer-b"
+    assert set(REVIEW_AGENTS) <= set(AGENT_IDS)
+    assert PHASE_AGENT["REVIEW"] == "ip-reviewer"
+
+
+def test_the_second_reviewer_can_be_turned_off_from_the_environment() -> None:
+    assert Settings().second_reviewer is True
+    assert Settings.from_env({"IPFE_SECOND_REVIEWER": "0"}).second_reviewer is False
+    assert Settings.from_env({"IPFE_SECOND_REVIEWER": "1"}).second_reviewer is True
+    with pytest.raises(ValueError):
+        Settings.from_env({"IPFE_SECOND_REVIEWER": "maybe"})
 
 
 # -- event log --------------------------------------------------------------

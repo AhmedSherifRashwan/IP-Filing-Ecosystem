@@ -27,9 +27,13 @@ import time
 from pathlib import Path
 from typing import Any, Final
 
+from ecosystem import evidence as evidence_module
 from ecosystem import gates as gates_module
+from ecosystem import ledger as ledger_module
 from ecosystem import loopback, package
+from ecosystem import questions as questions_module
 from ecosystem import state as state_module
+from ecosystem import support_check as support_module
 from ecosystem.calls import ContractFailed, TerminologyBlocked
 from ecosystem.config import AGENT_IDS, PHASES, Settings
 from ecosystem.dossier import Dossier, DossierError, InputContext, MissingInput
@@ -137,6 +141,13 @@ def build_parser() -> argparse.ArgumentParser:
         )
         run.add_argument("--attended", action="store_true", help="clear a remembered --unattended")
         run.add_argument(
+            "--search",
+            action="store_true",
+            help="opt in: send Prompt-06 search strings to Google Patents and chart the "
+            "machine-retrieved candidates (remembered on the matter)",
+        )
+        run.add_argument("--no-search", action="store_true", help="clear a remembered --search")
+        run.add_argument(
             "--notify-verbosity",
             choices=["steps", "milestones"],
             help="how chatty the pushed updates are (default: milestones when unattended)",
@@ -195,6 +206,32 @@ def build_parser() -> argparse.ArgumentParser:
     verify = sub.add_parser("verify-terminology", help="re-check the filing text against the lock")
     verify.add_argument("--matter", required=True)
 
+    ev = sub.add_parser("evidence", help="build (or verify) the evidence pack for the package")
+    ev.add_argument("--matter", required=True)
+    ev.add_argument(
+        "--verify",
+        action="store_true",
+        help="re-hash every file the existing pack lists instead of building one",
+    )
+    ev.add_argument(
+        "--no-ledger", action="store_true", help="do not anchor the root hash in the repo ledger"
+    )
+    ev.add_argument("--json", dest="as_json", action="store_true")
+
+    support = sub.add_parser(
+        "verify-support", help="deterministic claim-support check (advisory, never blocking)"
+    )
+    support.add_argument("--matter", required=True)
+    support.add_argument("--json", dest="as_json", action="store_true")
+
+    ask = sub.add_parser("questions", help="rank the Phase 1 open questions for Gate 1")
+    ask.add_argument("--matter", required=True)
+    ask.add_argument("--top", type=int, default=10)
+    ask.add_argument("--json", dest="as_json", action="store_true")
+    ask.add_argument(
+        "--template", action="store_true", help="write 00-intake/gate-1-answers.template.md"
+    )
+
     repair = sub.add_parser("repair-state", help="rebuild state.json from the artefacts on disk")
     repair.add_argument("--matter", required=True)
     repair.add_argument("--dry-run", action="store_true")
@@ -221,6 +258,9 @@ def main(argv: list[str] | None = None) -> int:
         "show": cmd_show,
         "package": cmd_package,
         "verify-terminology": cmd_verify_terminology,
+        "evidence": cmd_evidence,
+        "verify-support": cmd_verify_support,
+        "questions": cmd_questions,
         "repair-state": cmd_repair_state,
     }
     try:
@@ -380,6 +420,12 @@ def _attach_notifier(
         changed = True
     if getattr(args, "attended", False):
         state.unattended = False
+        changed = True
+    if getattr(args, "search", False):
+        state.search = True
+        changed = True
+    if getattr(args, "no_search", False):
+        state.search = False
         changed = True
     key = getattr(args, "notify", None)
     if key:
@@ -676,6 +722,178 @@ def cmd_verify_terminology(args: argparse.Namespace) -> int:
     if violations:
         return EXIT["terminology"]
     print("\nNo terminology violations in the current filing text.")
+    return EXIT["ok"]
+
+
+def cmd_evidence(args: argparse.Namespace) -> int:
+    """Build or verify the evidence pack for the latest final package.
+
+    `--verify` is the command a reviewer runs: exit 4 means a file the pack
+    vouches for has changed or gone, which is a fact about the dossier, not a
+    transport or contract failure.
+    """
+    settings = _settings(args)
+    dossier, state, events = _open(settings, args.matter)
+    version = dossier.latest("PACKAGE") or _newest(dossier, "PACKAGE")
+    if version is None:
+        return _fail(
+            EXIT["precondition"],
+            f"no package has been built for {args.matter}; there is nothing to evidence",
+        )
+
+    if args.verify:
+        return _verify_evidence(dossier, version.v, args.as_json)
+
+    with Lock(dossier.root):
+        state = state_module.load(dossier.state_path)
+        directory = evidence_module.build_evidence(dossier, state, version.path)
+        ledger_path: Path | None = None
+        if not args.no_ledger:
+            try:
+                package.anchor_root_hash(dossier, directory)
+                ledger_path = ledger_module.ledger_path(settings.repo_root, dossier.slug)
+                ledger_path = ledger_path if ledger_path.is_file() else None
+            except Exception as exc:  # anchoring never fails the command
+                log.warning("ledger anchoring failed: %s", exc)
+
+    manifest = json.loads((directory / evidence_module.MANIFEST_NAME).read_text(encoding="utf-8"))
+    events.emit(
+        "package_built",
+        phase="PACKAGE",
+        path=directory,
+        kind="evidence",
+        root_hash=manifest.get("dossier_root_hash"),
+    )
+    report = {
+        "matter": dossier.slug,
+        "package_version": manifest.get("package_version"),
+        "evidence_dir": str(directory),
+        "root_hash": manifest.get("dossier_root_hash"),
+        "files": manifest.get("file_count"),
+        "ledger": str(ledger_path) if ledger_path else None,
+    }
+    if args.as_json:
+        print(json.dumps(report, indent=2))
+    else:
+        print(f"evidence pack  {report['evidence_dir']}")
+        print(f"root hash      {report['root_hash']}")
+        print(f"files          {report['files']}")
+        print(f"ledger         {report['ledger'] or 'not anchored'}")
+        print(f"\nverify with:   uv run ipfe evidence --matter {dossier.slug} --verify")
+    return EXIT["ok"]
+
+
+def _verify_evidence(dossier: Dossier, package_version: int, as_json: bool) -> int:
+    directory = evidence_module.latest_evidence_dir(
+        dossier, package_version
+    ) or evidence_module.latest_evidence_dir(dossier)
+    if directory is None:
+        return _fail(
+            EXIT["precondition"],
+            f"no evidence pack for {dossier.slug}; build one with "
+            f"`uv run ipfe evidence --matter {dossier.slug}`",
+        )
+    report = evidence_module.verify_evidence(dossier, directory)
+    if as_json:
+        print(json.dumps(report.model_dump(mode="json"), indent=2))
+    else:
+        print(f"evidence pack  {directory}")
+        print(f"root hash      {report.recorded_root_hash}")
+        print(f"result         {report.summary()}")
+        for path in report.missing:
+            print(f"  MISSING   {path}")
+        for mismatch in report.mismatched:
+            print(f"  CHANGED   {mismatch.path}")
+            print(f"            recorded {mismatch.recorded[:16]} actual {mismatch.actual[:16]}")
+        if not report.ok:
+            print(f"\nrecomputed root hash: {report.actual_root_hash}")
+    return EXIT["ok"] if report.ok else EXIT["contract"]
+
+
+def cmd_verify_support(args: argparse.Namespace) -> int:
+    """Advisory claim-support check. Always exits 0 unless there is nothing to check."""
+    settings = _settings(args)
+    dossier, _state, _ = _open(settings, args.matter)
+    description = _filing_text(dossier, "P4", "description.md")
+    claims = _filing_text(dossier, "P5", "claims.md")
+    missing = [
+        name
+        for name, text in (("description.md", description), ("claims.md", claims))
+        if text is None
+    ]
+    if missing:
+        return _fail(
+            EXIT["precondition"],
+            f"no {', '.join(missing)} for {args.matter}; the inner loop has not produced "
+            "the filing text yet",
+        )
+    report = support_module.check_support(description or "", claims or "")
+    if args.as_json:
+        print(report.to_json())
+    else:
+        print(report.to_markdown())
+        print(
+            "\nAdvisory only: this is a word-level heuristic that complements the "
+            "independent reviewer's Prompt 28 support matrix and never replaces it."
+        )
+    return EXIT["ok"]
+
+
+def _filing_text(dossier: Dossier, phase: str, filename: str) -> str | None:
+    """Newest filing text: the phase version, else the review package, else the package."""
+    text = _latest_text(dossier, phase, filename)
+    if text is not None:
+        return text
+    for version in (dossier.latest("REVIEW"), _newest(dossier, "REVIEW")):
+        if version is not None:
+            candidate = version.path / "package" / filename
+            if candidate.is_file():
+                return candidate.read_text(encoding="utf-8")
+    package_version = dossier.latest("PACKAGE") or _newest(dossier, "PACKAGE")
+    if package_version is not None:
+        candidate = package_version.path / filename
+        if candidate.is_file():
+            return candidate.read_text(encoding="utf-8")
+    return None
+
+
+def cmd_questions(args: argparse.Namespace) -> int:
+    """Rank Phase 1's open questions so the human answers the scope-critical ones first."""
+    settings = _settings(args)
+    dossier, _state, _ = _open(settings, args.matter)
+    if not dossier.versions("P1"):
+        return _fail(
+            EXIT["precondition"],
+            f"Phase 1 has not run for {args.matter}; there are no open questions to rank",
+        )
+    ranked = questions_module.top_questions(dossier, args.top)
+
+    template: Path | None = None
+    if args.template:
+        template = questions_module.write_answers_template(dossier, ranked)
+
+    if args.as_json:
+        payload = {
+            "matter": dossier.slug,
+            "questions": [question.model_dump(mode="json") for question in ranked],
+            "template": str(template) if template else None,
+        }
+        print(json.dumps(payload, indent=2))
+        return EXIT["ok"]
+
+    if not ranked:
+        print(f"Phase 1 recorded no open questions for {dossier.slug}.")
+    for question in ranked:
+        blocks = ", ".join(question.blocks) or "-"
+        print(f"{question.rank:>2}. {question.id:<8} score {question.score:<3} blocks {blocks}")
+        print(f"    {question.text}")
+        print(f"    why: {question.why}")
+    if template is not None:
+        print(f"\nanswers template: {template}")
+        print(
+            f"then: uv run ipfe record-decision --matter {dossier.slug} --gate 1 "
+            f"--decision accept --by <you> --answers-file {template}"
+        )
     return EXIT["ok"]
 
 

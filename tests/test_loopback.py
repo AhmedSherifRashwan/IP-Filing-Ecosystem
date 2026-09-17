@@ -11,9 +11,11 @@ import pytest
 from ecosystem.config import Settings
 from ecosystem.loopback import (
     ROUTES,
+    TITLE_MATCH_RATIO,
     aggregate,
     corrections_in,
     counts,
+    is_routable,
     load_findings,
     open_categories,
     plan_routes,
@@ -287,3 +289,241 @@ def test_manual_fix_buys_exactly_one_more_cycle(state: MatterState, settings: Se
     state.loopback.cycles["novelty"] += 1
     plan = plan_routes(_findings(finding(category="novelty")), state, settings)
     assert plan.capped == ["novelty"]
+
+
+# ---------------------------------------------------------------------------
+# two independent reviewers
+# ---------------------------------------------------------------------------
+
+
+def b_envelope(directory: Path, prompt: str, **payload: Any) -> Path:
+    """The second reviewer's copy of one review prompt, filed as `<id>b`."""
+    return envelope(directory, f"{prompt}b", **payload)
+
+
+def test_a_finding_both_reviewers_raised_becomes_one_consensus_finding(
+    review_dir: Path,
+) -> None:
+    envelope(review_dir, "32", findings=[finding("32", 1)])
+    b_envelope(
+        review_dir,
+        "32",
+        findings=[finding("32", 1, title="Claim 1 reads on the admitted prior art")],
+    )
+
+    findings = aggregate(review_dir)
+    assert len(findings) == 1
+    assert findings[0].consensus is True
+    assert findings[0].reviewers == ["ip-reviewer", "ip-reviewer-b"]
+
+
+def test_two_reviewers_phrasing_the_same_objection_differently_still_agree(
+    review_dir: Path,
+) -> None:
+    """Different models do not write the same sentence. Exact matching would
+    report two independent findings where there is one, and the consensus mark
+    would then be unreachable in practice."""
+    envelope(review_dir, "32", findings=[finding("32", 1, title="Claim 1 is anticipated")])
+    b_envelope(
+        review_dir, "32", findings=[finding("32", 1, title="Claim 1 is anticipated outright")]
+    )
+    assert len(aggregate(review_dir)) == 1
+
+
+def test_different_objections_in_one_category_are_not_forced_together(
+    review_dir: Path,
+) -> None:
+    envelope(review_dir, "32", findings=[finding("32", 1, title="Claim 1 is anticipated")])
+    b_envelope(
+        review_dir,
+        "32",
+        findings=[finding("32", 1, title="No technical effect is credible", claims=["4"])],
+    )
+
+    findings = aggregate(review_dir)
+    assert len(findings) == 2
+    assert all(f.consensus is False for f in findings)
+    assert sorted(f.reviewers[0] for f in findings) == ["ip-reviewer", "ip-reviewer-b"]
+
+
+def test_a_consensus_finding_takes_the_more_alarming_severity(review_dir: Path) -> None:
+    envelope(review_dir, "32", findings=[finding("32", 1, severity="high")])
+    b_envelope(review_dir, "32", findings=[finding("32", 1, severity="critical")])
+
+    findings = aggregate(review_dir)
+    assert len(findings) == 1
+    assert findings[0].severity == "critical"
+
+
+def test_each_reviewer_finding_is_matched_at_most_once(review_dir: Path) -> None:
+    """Two near-identical A findings must not both claim the same B finding."""
+    envelope(
+        review_dir,
+        "32",
+        findings=[
+            finding("32", 1, title="Claim 1 is anticipated"),
+            finding("32", 2, title="Claim 1 is anticipated again"),
+        ],
+    )
+    b_envelope(review_dir, "32", findings=[finding("32", 1, title="Claim 1 is anticipated")])
+
+    findings = aggregate(review_dir)
+    assert [f.consensus for f in findings].count(True) == 1
+    assert len(findings) == 2
+
+
+def test_the_consensus_summary_is_written_beside_the_findings(review_dir: Path) -> None:
+    envelope(review_dir, "32", findings=[finding("32", 1)])
+    b_envelope(
+        review_dir,
+        "32",
+        findings=[
+            finding("32", 1, title="Claim 1 reads on the admitted prior art"),
+            finding("32", 2, title="Claim 4 adds nothing", severity="high", claims=["4"]),
+        ],
+    )
+    aggregate(review_dir)
+
+    summary = json.loads((review_dir / "consensus-summary.json").read_text(encoding="utf-8"))
+    assert summary["counts"] == {"consensus": 1, "a_only": 0, "b_only": 1}
+    assert summary["by_severity"]["critical"]["consensus"] == 1
+    assert summary["by_severity"]["high"]["b_only"] == 1
+    assert summary["reviewers"] == ["ip-reviewer", "ip-reviewer-b"]
+
+
+def test_a_recheck_supersedes_both_reviewers_copies(review_dir: Path) -> None:
+    """The formal fix changed the text both of them audited."""
+    correction = {
+        "target": "claims",
+        "location": "claim 4",
+        "from": "a return spring",
+        "to": "the return spring",
+        "reason": "antecedent basis",
+    }
+    envelope(review_dir, "37", corrections=[correction])
+    b_envelope(review_dir, "37", corrections=[correction])
+    envelope(review_dir, "37r", corrections=[])
+
+    assert corrections_in(review_dir) == []
+
+
+def test_findings_written_before_the_second_reviewer_existed_still_load(
+    review_dir: Path,
+) -> None:
+    envelope(review_dir, "32", findings=[finding("32", 1)])
+    aggregate(review_dir)
+    payload = json.loads((review_dir / "findings.json").read_text(encoding="utf-8"))
+    for item in payload["findings"]:
+        item.pop("reviewers")
+        item.pop("consensus")
+    (review_dir / "findings.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_findings(review_dir)
+    assert [f.id for f in loaded] == ["F-32-1"]
+    assert loaded[0].reviewers == []
+    assert loaded[0].consensus is False
+
+
+# ---------------------------------------------------------------------------
+# routing on agreement
+# ---------------------------------------------------------------------------
+
+
+def _consensus_finding(**overrides: Any) -> dict[str, Any]:
+    item = finding(**overrides)
+    item["reviewers"] = ["ip-reviewer", "ip-reviewer-b"]
+    item["consensus"] = True
+    return item
+
+
+def _single_finding(who: str = "ip-reviewer", **overrides: Any) -> dict[str, Any]:
+    item = finding(**overrides)
+    item["reviewers"] = [who]
+    item["consensus"] = False
+    return item
+
+
+def test_a_critical_routes_whether_or_not_the_reviewers_agree(
+    state: MatterState, settings: Settings
+) -> None:
+    for who in ("ip-reviewer", "ip-reviewer-b"):
+        plan = plan_routes(_findings(_single_finding(who, severity="critical")), state, settings)
+        assert plan.categories == ["novelty"]
+        assert plan.single_reviewer_highs == []
+
+
+def test_a_high_routes_only_when_both_reviewers_raised_it(
+    state: MatterState, settings: Settings
+) -> None:
+    agreed = plan_routes(_findings(_consensus_finding(severity="high")), state, settings)
+    assert agreed.categories == ["novelty"]
+    assert agreed.single_reviewer_highs == []
+
+    alone = plan_routes(_findings(_single_finding(severity="high")), state, settings)
+    assert alone.categories == []
+    assert alone.clean is True
+    assert alone.single_reviewer_highs == ["F-32-1"]
+
+
+def test_a_carried_high_is_reported_to_the_human(state: MatterState, settings: Settings) -> None:
+    findings = _findings(_single_finding(severity="high"))
+    assert residual_findings(findings) == []
+    assert [f.id for f in residual_findings(findings, settings)] == ["F-32-1"]
+
+
+def test_without_a_second_reviewer_a_high_routes_as_it_always_did(
+    state: MatterState, settings: Settings
+) -> None:
+    single = settings.model_copy(update={"second_reviewer": False})
+    plan = plan_routes(_findings(_single_finding(severity="high")), state, single)
+    assert plan.categories == ["novelty"]
+    assert plan.single_reviewer_highs == []
+    assert residual_findings(_findings(_single_finding(severity="high")), single) == []
+
+
+def test_is_routable_is_the_whole_rule(settings: Settings) -> None:
+    single = settings.model_copy(update={"second_reviewer": False})
+    cases = {
+        ("critical", False): (True, True),
+        ("critical", True): (True, True),
+        ("high", True): (True, True),
+        ("high", False): (False, True),
+        ("medium", True): (False, False),
+        ("low", True): (False, False),
+    }
+    for (severity, consensus), (with_b, without_b) in cases.items():
+        item = _findings(finding(severity=severity))[0]
+        item.consensus = consensus
+        assert is_routable(item, settings) is with_b, (severity, consensus)
+        assert is_routable(item, single) is without_b, (severity, consensus)
+
+
+def test_the_title_threshold_errs_towards_reporting_two_findings(review_dir: Path) -> None:
+    """0.6 is a deliberate bias, and this test exists to make the cost visible.
+
+    Two models that re-word an objection with different verbs can fall just
+    under it: "Claim 1 reads on a conventional two-rate core" against "Claim 1
+    is anticipated by the admitted two-rate core" scores 0.598. They are then
+    reported as two single-reviewer findings rather than one consensus finding.
+
+    That is the right way to be wrong. A false merge would do two bad things at
+    once: promote one model's lead to "evidence" and delete the other
+    reviewer's differently-aimed objection from the record. Two entries on the
+    residual list costs counsel a minute's reading. Raise TITLE_MATCH_RATIO to
+    merge less, lower it to merge more; do not lower it to flatter the numbers.
+    """
+    assert TITLE_MATCH_RATIO == 0.6
+    envelope(
+        review_dir,
+        "32",
+        findings=[finding("32", 1, title="Claim 1 reads on a conventional two-rate core")],
+    )
+    b_envelope(
+        review_dir,
+        "32",
+        findings=[finding("32", 1, title="Claim 1 is anticipated by the admitted two-rate core")],
+    )
+
+    findings = aggregate(review_dir)
+    assert len(findings) == 2
+    assert all(f.consensus is False for f in findings)

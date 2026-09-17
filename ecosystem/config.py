@@ -20,12 +20,14 @@ __all__ = [
     "FINDING_CATEGORIES",
     "PHASES",
     "PHASE_AGENT",
+    "REVIEW_AGENTS",
+    "SECOND_REVIEWER",
     "Settings",
     "get_settings",
     "phase_dir_name",
 ]
 
-# The seven native OpenClaw agents (Part 1 of the plan). Order is the pipeline order.
+# The native OpenClaw agents (Part 1 of the plan). Order is the pipeline order.
 AGENT_IDS: Final[tuple[str, ...]] = (
     "patentcounsel",
     "ip-disclosure",
@@ -34,7 +36,20 @@ AGENT_IDS: Final[tuple[str, ...]] = (
     "ip-spec",
     "ip-claims",
     "ip-reviewer",
+    "ip-reviewer-b",
+    # Prior-art search lane, landing alongside this change (prompts/x-search-triage.md).
+    # Listed here so `playbook.validate` accepts the prompt that names it; its
+    # workspace files and its openclaw.patch entry belong to that change, not
+    # this one, so scripts/install.sh deliberately does not install it yet.
+    "ip-searcher",
 )
+
+# The independent reviewers, in the order their findings are merged. They run
+# the same prompts against the same blind package on deliberately different
+# model families, and neither is told the other exists: agreement between them
+# is evidence only because it was not coordinated.
+REVIEW_AGENTS: Final[tuple[str, ...]] = ("ip-reviewer", "ip-reviewer-b")
+SECOND_REVIEWER: Final[str] = REVIEW_AGENTS[1]
 
 # Phase id -> dossier directory name. The numeric prefix keeps `ls` in pipeline order.
 PHASES: Final[dict[str, str]] = {
@@ -89,7 +104,7 @@ class Settings(BaseModel):
     prompts_dir: Path | None = None
 
     openclaw_bin: str = _DEFAULT_OPENCLAW_BIN
-    max_parallel_calls: int = 4
+    max_parallel_calls: int = 8
 
     # Assembly budget. A prompt over this is a design error in the input list,
     # not something to silently truncate.
@@ -109,6 +124,11 @@ class Settings(BaseModel):
     gate2_reconfirm_on_loopback: bool = True
 
     terminology_policy: Literal["block", "warn"] = "block"
+
+    # Run `ip-reviewer-b` alongside `ip-reviewer` on every review round.
+    # `IPFE_SECOND_REVIEWER=0` falls back to the single-reviewer pipeline,
+    # which also restores the old routing rule for high findings.
+    second_reviewer: bool = True
 
     def model_post_init(self, _context: object) -> None:
         # Derived paths follow repo_root unless explicitly overridden, so pointing

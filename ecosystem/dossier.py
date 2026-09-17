@@ -728,7 +728,14 @@ class Dossier:
             return [self._drawings_listing(spec)]
         if any(ch in rest for ch in "*?["):
             matches = sorted(
-                p for p in self.intake_dir.glob(rest) if p.is_file() and not p.name.startswith(".")
+                p
+                for p in self.intake_dir.glob(rest)
+                if p.is_file()
+                and not p.name.startswith(".")
+                # Search provenance (SEARCH-LOG.json, SEARCH-README.md) is for
+                # the evidence pack, not for the agents' prompts.
+                and not p.name.startswith("SEARCH-")
+                and p.suffix.lower() in {".md", ".txt", ""}
             )
             if not matches:
                 raise MissingInput(spec, f"no files match 00-intake/{rest}")

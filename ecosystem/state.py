@@ -184,6 +184,11 @@ class ReviewVersion(_Loose):
     counts: dict[str, int] = Field(default_factory=dict)
     open_categories: list[str] = Field(default_factory=list)
     gate14_passed: bool | None = None
+    # Which reviewers actually returned envelopes for this round, and how the
+    # merge landed: {"consensus": n, "a_only": n, "b_only": n}. Both default
+    # empty, so a state.json written by the single-reviewer pipeline loads.
+    reviewers: list[str] = Field(default_factory=list)
+    consensus: dict[str, int] = Field(default_factory=dict)
 
 
 class ReviewState(BaseModel):
@@ -267,6 +272,8 @@ class MatterState(BaseModel):
     last_error: LastError | None = None
     notify: NotifyTarget | None = None
     unattended: bool = False
+    # Opt-in: send Prompt-06 search strings (never the disclosure) to Google Patents.
+    search: bool = False
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
 
