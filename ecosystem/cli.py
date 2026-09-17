@@ -34,6 +34,7 @@ from ecosystem.calls import ContractFailed, TerminologyBlocked
 from ecosystem.config import AGENT_IDS, PHASES, Settings
 from ecosystem.dossier import Dossier, DossierError, InputContext, MissingInput
 from ecosystem.log import EventLog
+from ecosystem.notify import SessionNotifier
 from ecosystem.playbook import PlaybookError, load_playbook
 from ecosystem.prompt_builder import PromptTooLarge, assemble
 from ecosystem.runner import Runner, StopReason
@@ -86,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     new = sub.add_parser("new-matter", help="create a dossier")
+    new.add_argument("--notify", metavar="SESSION_KEY", help="push progress into this session")
     new.add_argument("--slug", required=True)
     new.add_argument("--title", required=True)
     new.add_argument("--jurisdictions", default="US,EP,GB")
@@ -121,6 +123,14 @@ def build_parser() -> argparse.ArgumentParser:
         run.add_argument("--terminology", choices=["block", "warn"])
         run.add_argument("--allow-truncate", action="store_true")
         run.add_argument(
+            "--notify",
+            metavar="SESSION_KEY",
+            help="push progress into this OpenClaw session (agent:<id>:<session>); remembered",
+        )
+        run.add_argument(
+            "--notify-deliver", action="store_true", help="also deliver relays to the channel"
+        )
+        run.add_argument(
             "--background",
             action="store_true",
             help="launch detached and return at once; poll with `status --wait`",
@@ -148,6 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
     decide.add_argument("--by", required=True)
     decide.add_argument("--note")
     decide.add_argument("--answers-file")
+    decide.add_argument("--notify", metavar="SESSION_KEY", help="push progress into this session")
     decide.add_argument("--confirmed-file")
 
     prompt = sub.add_parser("prompt", help="assemble one prompt and print it")
@@ -249,6 +260,10 @@ def cmd_new_matter(args: argparse.Namespace) -> int:
     EventLog(dossier.log_path, slug).emit(
         "matter_created", title=args.title, jurisdictions=jurisdictions, example=example
     )
+    if getattr(args, "notify", None):
+        state = state_module.load(dossier.state_path)
+        state.notify = state_module.NotifyTarget(session_key=args.notify)
+        state_module.save(state, dossier.state_path)
 
     print(f"Created {root}")
     if example is None:
@@ -320,6 +335,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"matter {args.matter} is complete; nothing to run.")
         return EXIT["ok"]
 
+    _attach_notifier(args, dossier, state, events, settings)
     if args.background:
         return _spawn_background(args, dossier, settings)
 
@@ -328,13 +344,46 @@ def cmd_run(args: argparse.Namespace) -> int:
         # Re-read under the lock: another process may have decided a gate
         # between our load and our turn.
         state = state_module.load(dossier.state_path)
-        runner = Runner(
-            dossier, state, playbook, transport, settings, events, args.allow_truncate
-        )
+        runner = Runner(dossier, state, playbook, transport, settings, events, args.allow_truncate)
         reason = runner.run(until=args.until, from_phase=args.from_phase)
 
     _print_stop(reason, dossier, state, settings)
     return _STOP_EXIT[reason]
+
+
+def _attach_notifier(
+    args: argparse.Namespace,
+    dossier: Dossier,
+    state: MatterState,
+    events: EventLog,
+    settings: Settings,
+) -> None:
+    """Remember a `--notify` target on the matter and subscribe the relay to the log.
+
+    The target is persisted so a background child, a later `run`, and
+    `record-decision` all push to the same session without being told again.
+    """
+    key = getattr(args, "notify", None)
+    if key:
+        deliver = bool(getattr(args, "notify_deliver", False))
+        state.notify = state_module.NotifyTarget(session_key=key, deliver=deliver)
+        state_module.save(state, dossier.state_path)
+    target = state.notify
+    if target is None:
+        return
+    try:
+        playbook = load_playbook(settings.prompts_path)
+        titles = {pid: spec.title for pid, spec in playbook.prompts.items()}
+    except Exception:  # the relay must never depend on the prompt library loading
+        titles = {}
+    notifier = SessionNotifier(
+        target.session_key,
+        settings.openclaw_bin,
+        deliver=target.deliver,
+        log_path=dossier.root / "notify.log",
+        prompt_titles=titles,
+    )
+    events.subscribe(notifier.on_event)
 
 
 _BACKGROUND_PASSTHROUGH: Final[tuple[str, ...]] = (
@@ -460,6 +509,7 @@ def cmd_record_decision(args: argparse.Namespace) -> int:
     with Lock(dossier.root):
         state = state_module.load(dossier.state_path)
         events = EventLog(dossier.log_path, dossier.slug)
+        _attach_notifier(args, dossier, state, events, settings)
         gates = gates_module.Gates(dossier, state, settings, events)
         result = gates.decide(
             args.gate,
@@ -591,8 +641,7 @@ def cmd_verify_terminology(args: argparse.Namespace) -> int:
             continue
         report = check_output(text, None, table, "drafting", filename)
         print(
-            f"{filename}: {len(report.violations)} violation(s), "
-            f"{len(report.warnings)} warning(s)"
+            f"{filename}: {len(report.violations)} violation(s), {len(report.warnings)} warning(s)"
         )
         for violation in report.violations:
             print(f"  VIOLATION {violation.rule}: {violation.term} (locked row {violation.row})")
@@ -728,8 +777,7 @@ def _render_status(report: dict[str, Any]) -> str:
     inner = report["inner_loop"]
     lines += [
         "",
-        f"inner loop  round {inner['round']}/{inner['cap']}  "
-        f"converged={inner['converged']}",
+        f"inner loop  round {inner['round']}/{inner['cap']}  converged={inner['converged']}",
         f"loop-back   {report['loopback']['cycles']}  "
         f"(cap {report['loopback']['cap_per_category']} per category, "
         f"formal passes {report['loopback']['formal_fix_passes']})",

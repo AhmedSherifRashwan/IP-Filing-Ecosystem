@@ -555,9 +555,7 @@ class Gates:
             effects.append("one extra re-review authorised")
         elif decision == "narrow":
             self.state.status = "idle"
-            effects.append(
-                "one authorised claim narrowing (x-p5-revise) will run before re-review"
-            )
+            effects.append("one authorised claim narrowing (x-p5-revise) will run before re-review")
         self.state.loopback.forced_decisions.append(forced)
         self.events.emit(
             "loopback_cap_reached",

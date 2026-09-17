@@ -728,9 +728,7 @@ class Dossier:
             return [self._drawings_listing(spec)]
         if any(ch in rest for ch in "*?["):
             matches = sorted(
-                p
-                for p in self.intake_dir.glob(rest)
-                if p.is_file() and not p.name.startswith(".")
+                p for p in self.intake_dir.glob(rest) if p.is_file() and not p.name.startswith(".")
             )
             if not matches:
                 raise MissingInput(spec, f"no files match 00-intake/{rest}")

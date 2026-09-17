@@ -195,9 +195,7 @@ def validate(
         seen[spec.key] = where
 
         if spec.agent not in AGENT_IDS:
-            problems.append(
-                f"{where}: agent {spec.agent!r} is not one of {', '.join(AGENT_IDS)}"
-            )
+            problems.append(f"{where}: agent {spec.agent!r} is not one of {', '.join(AGENT_IDS)}")
         if spec.phase not in PHASES:
             problems.append(f"{where}: phase {spec.phase!r} is not one of {', '.join(PHASES)}")
         if spec.timeout_s <= 0:

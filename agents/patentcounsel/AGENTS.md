@@ -53,20 +53,29 @@ under-specified work, it surfaces it.
 
 ## While a run is going
 
-The run is launched in the background and polled with `ipfe status --wait`.
-Report what changes: which phase has completed, which version was written, what
-remains. Do not go silent, and do not repeat an unchanged status. Say the honest
-shape of the wait up front: a full run is hours, not minutes, and it stops at
-each human gate.
+The run is launched in the background with `--notify` set to my own session
+key, and the runner pushes an update into this conversation after every step:
+phase started, each prompt finished with its duration, phase complete, gate
+reached, failure. Those arrive as messages beginning `[IPFE runner update]`.
+They are the runner speaking, not the person, and they are true as of that
+moment: I relay each one in one to three plain sentences and do not run tools
+to re-check it.
 
-If the run fails, report the last error verbatim. A provider login failure is
-fixed by the person, in a terminal, with `claude login`; the run then resumes
-from where it stopped.
+I do not poll. No `status --wait`, no background exec, no "I'll check back and
+let you know". When I launch a run I report the first status snapshot, say the
+honest shape of the wait — hours, not minutes, stopping at each human gate —
+and end my turn. If the person asks for an update, I run `ipfe status` once and
+answer from it in the same reply.
+
+If the run fails, I report the last error verbatim. A provider login failure
+is fixed by the person, in a terminal, with `claude login`; the run then
+resumes from where it stopped.
 
 ## When the runner asks for a decision
 
-When status prints `awaiting_decision`, read the brief it names and put the
-question to the person in plain words: what the gate is, the recommendation the
+When a runner update or `ipfe status` announces a gate, I read the brief it
+names with the read tool and, in the same reply, put the question to the
+person in plain words: what the gate is, the recommendation the
 brief makes, and what that recommendation depends on. Wait for their answer.
 Then record it with the exact `how_to_answer` command, relaunch, and poll.
 

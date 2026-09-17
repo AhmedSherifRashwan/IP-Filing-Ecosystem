@@ -22,9 +22,7 @@ from tests.conftest import DRAFTING_BODY, REPO_ROOT, write_version
 
 def _budget(tmp_path: Path, chars: int) -> Settings:
     """Same temp run, smaller prompt budget."""
-    return Settings(
-        repo_root=tmp_path, prompts_dir=REPO_ROOT / "prompts", max_prompt_chars=chars
-    )
+    return Settings(repo_root=tmp_path, prompts_dir=REPO_ROOT / "prompts", max_prompt_chars=chars)
 
 
 @pytest.fixture
@@ -139,9 +137,7 @@ def test_lock_is_embedded_even_when_the_prompt_forgot_to_ask(
     assert "## Locked terminology" in result.text
 
 
-def test_no_lock_before_gate_1_is_not_an_error_for_p1(
-    dossier: Dossier, settings: Settings
-) -> None:
+def test_no_lock_before_gate_1_is_not_an_error_for_p1(dossier: Dossier, settings: Settings) -> None:
     result = _assemble(dossier, settings, _spec(phase="P1", agent="ip-disclosure"))
     assert "## Locked terminology" not in result.text
 
@@ -151,9 +147,7 @@ def test_missing_required_input_raises(dossier: Dossier, settings: Settings) -> 
         _assemble(dossier, settings, _spec(inputs=["out:P1/01"]))
 
 
-def test_missing_optional_input_is_recorded_not_fatal(
-    dossier: Dossier, settings: Settings
-) -> None:
+def test_missing_optional_input_is_recorded_not_fatal(dossier: Dossier, settings: Settings) -> None:
     result = _assemble(dossier, settings, _spec(optional_inputs=["out:P1/01"]))
     assert result.missing_optional == ["out:P1/01"]
 
@@ -161,18 +155,14 @@ def test_missing_optional_input_is_recorded_not_fatal(
 def test_tolerate_missing_records_required_gaps_for_dry_runs(
     dossier: Dossier, settings: Settings
 ) -> None:
-    result = _assemble(
-        dossier, settings, _spec(inputs=["out:P1/01"]), tolerate_missing=True
-    )
+    result = _assemble(dossier, settings, _spec(inputs=["out:P1/01"]), tolerate_missing=True)
     assert result.missing_required == ["out:P1/01"]
 
 
 def test_synthetic_inputs_lead_the_dossier_files(dossier: Dossier, settings: Settings) -> None:
     write_version(dossier, "P1", {"01": DRAFTING_BODY})
     extra = synthetic_input("gate:1", "gates/gate-1.pending.json", '{"gate": "1"}')
-    result = _assemble(
-        dossier, settings, _spec(inputs=["out:P1/01"]), extra_inputs=[extra]
-    )
+    result = _assemble(dossier, settings, _spec(inputs=["out:P1/01"]), extra_inputs=[extra])
     assert result.text.index("gates/gate-1.pending.json") < result.text.index("01-disclosure/")
 
 
@@ -209,9 +199,7 @@ def test_over_budget_required_inputs_raise(dossier: Dossier, tmp_path: Path) -> 
         _assemble(dossier, settings, _spec(inputs=["intake:data/huge.md"]))
 
 
-def test_allow_truncate_marks_the_largest_optional_input(
-    dossier: Dossier, tmp_path: Path
-) -> None:
+def test_allow_truncate_marks_the_largest_optional_input(dossier: Dossier, tmp_path: Path) -> None:
     settings = _budget(tmp_path, 8_000)
     dossier.settings = settings
     _big(dossier, "huge.md", 40_000)
@@ -227,9 +215,7 @@ def test_allow_truncate_marks_the_largest_optional_input(
     assert result.chars <= 8_000
 
 
-def test_allow_truncate_never_truncates_a_required_input(
-    dossier: Dossier, tmp_path: Path
-) -> None:
+def test_allow_truncate_never_truncates_a_required_input(dossier: Dossier, tmp_path: Path) -> None:
     settings = _budget(tmp_path, 5_000)
     dossier.settings = settings
     _big(dossier, "huge.md", 40_000)

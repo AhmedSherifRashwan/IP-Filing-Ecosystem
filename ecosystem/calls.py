@@ -278,9 +278,7 @@ class Caller:
         if ctx.package_dir is not None and ctx.input_ctx.package_dir is None:
             ctx.input_ctx.package_dir = ctx.package_dir
 
-        call_id, suffix, idem = call_ids(
-            self.dossier.slug, phase, spec.id, version, 0, ctx.slot
-        )
+        call_id, suffix, idem = call_ids(self.dossier.slug, phase, spec.id, version, 0, ctx.slot)
         assembled = assemble(
             self.dossier,
             self.state,
@@ -698,9 +696,7 @@ class Caller:
 
     # -- write-backs (plan s3.7) -------------------------------------------
 
-    def write_backs(
-        self, result: CallResult, spec: PromptSpec, ctx: AttemptContext
-    ) -> list[Path]:
+    def write_backs(self, result: CallResult, spec: PromptSpec, ctx: AttemptContext) -> list[Path]:
         """Project a reply section onto the file the rest of the pipeline reads.
 
         These are the only places where an agent's prose becomes a first-class

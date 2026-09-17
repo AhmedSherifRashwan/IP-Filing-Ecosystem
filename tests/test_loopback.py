@@ -196,9 +196,7 @@ def test_novelty_routes_the_full_pass_in_pipeline_order(
     assert plan.categories == ["novelty"]
 
 
-def test_support_adds_disclosure_and_never_narrows(
-    state: MatterState, settings: Settings
-) -> None:
+def test_support_adds_disclosure_and_never_narrows(state: MatterState, settings: Settings) -> None:
     plan = plan_routes(
         _findings(finding(category="support", title="No basis for claim 3", target="P4")),
         state,
@@ -231,9 +229,7 @@ def test_enablement_reaches_the_claims_only_when_it_names_them(
     ]
 
 
-def test_categories_are_routed_in_one_combined_pass(
-    state: MatterState, settings: Settings
-) -> None:
+def test_categories_are_routed_in_one_combined_pass(state: MatterState, settings: Settings) -> None:
     plan = plan_routes(
         _findings(
             finding(category="novelty"),
@@ -269,9 +265,7 @@ def test_formal_stops_at_its_own_cap(state: MatterState, settings: Settings) -> 
     assert plan.formal_exhausted is True
 
 
-def test_category_at_its_cap_becomes_a_cap_gate(
-    state: MatterState, settings: Settings
-) -> None:
+def test_category_at_its_cap_becomes_a_cap_gate(state: MatterState, settings: Settings) -> None:
     state.loopback.cycles["novelty"] = settings.loopback_cap
     plan = plan_routes(_findings(finding(category="novelty")), state, settings)
 
@@ -281,9 +275,7 @@ def test_category_at_its_cap_becomes_a_cap_gate(
     assert plan.finding_ids["novelty"] == ["F-32-1"]
 
 
-def test_manual_fix_buys_exactly_one_more_cycle(
-    state: MatterState, settings: Settings
-) -> None:
+def test_manual_fix_buys_exactly_one_more_cycle(state: MatterState, settings: Settings) -> None:
     state.loopback.cycles["novelty"] = settings.loopback_cap
     state.loopback.forced_decisions.append(
         ForcedDecision(category="novelty", decision="manual-fix", decided_by="ahmed")

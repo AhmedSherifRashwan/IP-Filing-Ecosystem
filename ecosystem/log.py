@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
@@ -40,6 +41,9 @@ EVENTS: Final[frozenset[str]] = frozenset(
         "package_built",
         "run_stopped",
         "run_failed",
+        "phase_completed",
+        "intake_written",
+        "notify_failed",
     }
 )
 
@@ -59,6 +63,17 @@ class EventLog:
     def __init__(self, path: Path | str, matter: str = "") -> None:
         self.path = Path(path)
         self.matter = matter
+        self._observers: list[Callable[[dict[str, Any]], None]] = []
+
+    def subscribe(self, observer: Callable[[dict[str, Any]], None]) -> None:
+        """Register a callback that sees every record after it is written.
+
+        Observers are how a run pushes progress to a human (see `notify.py`)
+        without the runner knowing anything about chat sessions. An observer
+        that raises is logged and dropped from the call, never re-raised: a
+        broken notifier must not abort a run that is otherwise fine.
+        """
+        self._observers.append(observer)
 
     def emit(self, event: str, **detail: Any) -> dict[str, Any]:
         """Append one event. Returns the written record so callers can echo it.
@@ -88,6 +103,11 @@ class EventLog:
                 handle.write(line + "\n")
         except OSError as exc:  # pragma: no cover - disk-full class of failure
             log.error("event log write failed for %s: %s", self.path, exc)
+        for observer in list(self._observers):
+            try:
+                observer(record)
+            except Exception as exc:  # deliberately broad: observers are never load-bearing
+                log.warning("event observer failed on %s: %s", event, exc)
         return record
 
     def tail(self, n: int = 20) -> list[dict[str, Any]]:

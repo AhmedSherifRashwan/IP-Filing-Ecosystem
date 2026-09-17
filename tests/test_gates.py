@@ -113,9 +113,7 @@ def test_a_failing_brief_never_blocks_the_gate(
     def explode(gate: str, record: dict) -> str:
         raise RuntimeError("gateway is down")
 
-    gates = Gates(
-        dossier, state, settings, EventLog(dossier.log_path), brief_writer=explode
-    )
+    gates = Gates(dossier, state, settings, EventLog(dossier.log_path), brief_writer=explode)
     gates.request("1", {"files": ["01-disclosure/v1/01.md"]}, ["P2"])
 
     brief = (dossier.briefs_dir / "gate-1.md").read_text(encoding="utf-8")
@@ -246,9 +244,7 @@ def test_gate1_without_prompt_04_cannot_lock(
         gates.decide("1", "accept", "ahmed")
 
 
-def test_gate1_reject_fails_the_matter(
-    dossier: Dossier, state: MatterState, gates: Gates
-) -> None:
+def test_gate1_reject_fails_the_matter(dossier: Dossier, state: MatterState, gates: Gates) -> None:
     _p1(dossier, state)
     gates.request("1", {}, [])
     gates.decide("1", "reject", "ahmed", note="the disclosure is wrong")
@@ -330,9 +326,7 @@ def test_cap_gate_abort_fails_the_matter(state: MatterState, gates: Gates) -> No
     assert state.loopback.forced_decisions[-1].decision == "abort"
 
 
-def test_cap_gate_accept_residual_lets_the_run_continue(
-    state: MatterState, gates: Gates
-) -> None:
+def test_cap_gate_accept_residual_lets_the_run_continue(state: MatterState, gates: Gates) -> None:
     gates.request("loopback-cap-novelty", {}, [])
     result = gates.decide("loopback-cap-novelty", "accept-residual", "ahmed")
 

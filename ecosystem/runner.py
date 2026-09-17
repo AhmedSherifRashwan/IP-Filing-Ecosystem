@@ -491,9 +491,9 @@ class Runner:
         envelope = _read_envelope(version.path / "x-p5-revise.envelope.json")
         if envelope is None:
             return False
-        blobs = [
-            str(item) for item in (envelope.get("open_disagreements") or [])
-        ] + [str(item) for item in (envelope.get("support_refs") or [])]
+        blobs = [str(item) for item in (envelope.get("open_disagreements") or [])] + [
+            str(item) for item in (envelope.get("support_refs") or [])
+        ]
         return any("functional" in blob.lower() for blob in blobs)
 
     def _signals(self, phase: str, version: VersionDir, key: str) -> list[Any]:
@@ -769,14 +769,15 @@ class Runner:
     # -- routing ------------------------------------------------------------
 
     def _start_route(self, plan: loopback.RoutePlan, version: VersionDir) -> LoopbackEvent:
-        cycle = max(
-            (self.state.loopback.cycles.get(category, 0) for category in plan.categories),
-            default=0,
-        ) + 1
-        for category in plan.categories:
-            self.state.loopback.cycles[category] = (
-                self.state.loopback.cycles.get(category, 0) + 1
+        cycle = (
+            max(
+                (self.state.loopback.cycles.get(category, 0) for category in plan.categories),
+                default=0,
             )
+            + 1
+        )
+        for category in plan.categories:
+            self.state.loopback.cycles[category] = self.state.loopback.cycles.get(category, 0) + 1
         event = LoopbackEvent(
             category=",".join(plan.categories),
             cycle=cycle,
@@ -1055,9 +1056,7 @@ class Runner:
         self._save()
         return version_dir
 
-    def _complete_version(
-        self, phase: str, version: VersionDir, status: str = "complete"
-    ) -> None:
+    def _complete_version(self, phase: str, version: VersionDir, status: str = "complete") -> None:
         self.dossier.complete_version(phase, version.v, status)
         record = self._version_record(phase, version)
         record.status = "complete" if status == "complete" else "failed"
@@ -1066,6 +1065,14 @@ class Runner:
         phase_state.status = "complete" if status == "complete" else "failed"
         phase_state.current_version = version.v
         self._save()
+        self.events.emit(
+            "phase_completed",
+            phase=phase,
+            version=version.v,
+            status=record.status,
+            trigger=record.trigger,
+            prompts_done=list(record.prompts_done),
+        )
 
     def _close_running(self, phase: str) -> None:
         """Finish a running version so the next entry opens a fresh one."""
@@ -1113,17 +1120,14 @@ class Runner:
         if review is None:
             return []
         return [
-            str(path.relative_to(self.dossier.root))
-            for path in sorted(review.path.glob("*.md"))
+            str(path.relative_to(self.dossier.root)) for path in sorted(review.path.glob("*.md"))
         ] + [str((review.path / "findings.json").relative_to(self.dossier.root))]
 
     def _package_files(self) -> list[str]:
         version = self.dossier.latest("PACKAGE") or self._newest_review()
         if version is None:
             return []
-        return [
-            str(path.relative_to(self.dossier.root)) for path in sorted(version.path.glob("*"))
-        ]
+        return [str(path.relative_to(self.dossier.root)) for path in sorted(version.path.glob("*"))]
 
     def _open_questions(self, phase: str) -> list[str]:
         version_dir = self.dossier.latest(phase)

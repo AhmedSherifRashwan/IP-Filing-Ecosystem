@@ -39,9 +39,7 @@ __all__ = [
 
 # Kinds whose output produces filing text: an undeclared synonym there is a
 # violation. Analysis prose is exploratory, so the same hit is a warning.
-DRAFTING_KINDS: Final[frozenset[str]] = frozenset(
-    {"drafting", "compose", "revise", "formal-fix"}
-)
+DRAFTING_KINDS: Final[frozenset[str]] = frozenset({"drafting", "compose", "revise", "formal-fix"})
 
 _EMPTY_CELL: Final[frozenset[str]] = frozenset(
     {"", "-", "--", "—", "–", "n/a", "na", "none", "no", "false", "nil", "tbd"}

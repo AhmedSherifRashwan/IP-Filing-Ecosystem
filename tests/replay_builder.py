@@ -199,13 +199,13 @@ def review_reply(
     for finding in listed:
         blocks.append(
             f"### {finding['id']} ({finding['severity']}, {finding['category']})\n\n"
-            f"Claim language: \"{(finding.get('claim_refs') or ['1'])[0]}\". "
+            f'Claim language: "{(finding.get("claim_refs") or ["1"])[0]}". '
             f"{finding['attack']}\n\nLeast narrowing action: {finding['least_narrowing_action']}"
         )
     correction_text = "None."
     if corrections:
         correction_text = "\n".join(
-            f"- {c['target']} / {c['location']}: replace \"{c['from']}\" with \"{c['to']}\" "
+            f'- {c["target"]} / {c["location"]}: replace "{c["from"]}" with "{c["to"]}" '
             f"({c['reason']})"
             for c in corrections
         )
@@ -219,9 +219,7 @@ def review_reply(
         "open_questions": [],
     }
     return (
-        "## Findings\n\n"
-        + "\n\n".join(blocks)
-        + f"\n\n## Corrections\n\n{correction_text}\n\n"
+        "## Findings\n\n" + "\n\n".join(blocks) + f"\n\n## Corrections\n\n{correction_text}\n\n"
         "## Assumptions\n\n- A1: Common general knowledge includes conventional "
         "Presta valve cores.\n\n"
         "## Open Questions\n\n- Q1: Has a prior-art search been commissioned?\n\n"

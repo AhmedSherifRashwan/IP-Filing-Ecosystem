@@ -181,9 +181,7 @@ def _figures(dossier: Dossier) -> tuple[str, str]:
 
     registry_output = dossier.latest_output("P4", "20a")
     if registry_output is not None:
-        instructions = section_body(
-            deliverable_only(_body(registry_output)), "Figure Instructions"
-        )
+        instructions = section_body(deliverable_only(_body(registry_output)), "Figure Instructions")
         if instructions:
             parts += ["## Figure Instructions", "", instructions]
             sources.append(str(registry_output.relative_to(dossier.root)))

@@ -106,9 +106,7 @@ def test_review_reply_parses_findings_gate14_and_the_from_alias() -> None:
 
 
 def test_correction_accepts_either_field_name() -> None:
-    by_alias = Correction(
-        target="claims", location="c1", **{"from": "a"}, to="b", reason="typo"
-    )
+    by_alias = Correction(target="claims", location="c1", **{"from": "a"}, to="b", reason="typo")
     by_name = Correction(target="claims", location="c1", from_text="a", to="b", reason="typo")
     assert by_alias.from_text == by_name.from_text == "a"
 

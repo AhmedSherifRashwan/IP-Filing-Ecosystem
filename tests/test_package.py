@@ -92,9 +92,7 @@ def _review_version(dossier: Dossier, state: MatterState) -> int:
 # ---------------------------------------------------------------------------
 
 
-def test_review_package_contains_finished_text_only(
-    dossier: Dossier, state: MatterState
-) -> None:
+def test_review_package_contains_finished_text_only(dossier: Dossier, state: MatterState) -> None:
     _drafted(dossier, state)
     version = _review_version(dossier, state)
     package_dir = build_review_package(dossier, state, version)
@@ -256,9 +254,7 @@ def _reviewed(dossier: Dossier, state: MatterState) -> int:
     return review.v
 
 
-def test_final_package_has_everything_counsel_needs(
-    dossier: Dossier, state: MatterState
-) -> None:
+def test_final_package_has_everything_counsel_needs(dossier: Dossier, state: MatterState) -> None:
     _reviewed(dossier, state)
     version = dossier.new_version("PACKAGE", "initial")
     state.phase("PACKAGE").current_version = version.v
@@ -293,9 +289,7 @@ def test_gate14_answers_are_reproduced_from_the_envelope(
     assert "1 of 14 questions are not a clear `yes`" in gate14
 
 
-def test_residual_findings_report_medium_and_low(
-    dossier: Dossier, state: MatterState
-) -> None:
+def test_residual_findings_report_medium_and_low(dossier: Dossier, state: MatterState) -> None:
     _reviewed(dossier, state)
     version = dossier.new_version("PACKAGE", "initial")
     target = build_final_package(dossier, state, version.v)
@@ -305,9 +299,7 @@ def test_residual_findings_report_medium_and_low(
     assert "Reported, not routed (medium/low)" in residual
 
 
-def test_the_fallback_memo_never_implies_clearance(
-    dossier: Dossier, state: MatterState
-) -> None:
+def test_the_fallback_memo_never_implies_clearance(dossier: Dossier, state: MatterState) -> None:
     _reviewed(dossier, state)
     version = dossier.new_version("PACKAGE", "initial")
     target = build_final_package(dossier, state, version.v)

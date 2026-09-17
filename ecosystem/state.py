@@ -80,6 +80,15 @@ class _Loose(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class NotifyTarget(BaseModel):
+    """Where runner progress is pushed: an OpenClaw session the human is watching."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_key: str
+    deliver: bool = False
+
+
 class MatterInfo(BaseModel):
     slug: str
     title: str
@@ -161,9 +170,7 @@ class ForcedDecision(_Loose):
 
 class LoopbackState(BaseModel):
     cap_per_category: int = 2
-    cycles: dict[str, int] = Field(
-        default_factory=lambda: dict.fromkeys(FINDING_CATEGORIES, 0)
-    )
+    cycles: dict[str, int] = Field(default_factory=lambda: dict.fromkeys(FINDING_CATEGORIES, 0))
     history: list[LoopbackEvent] = Field(default_factory=list)
     forced_decisions: list[ForcedDecision] = Field(default_factory=list)
     # Formal fixes have their own counter: they never narrow scope, so they must
@@ -257,6 +264,7 @@ class MatterState(BaseModel):
     agent_runs: list[AgentRun] = Field(default_factory=list)
     counters: dict[str, int] = Field(default_factory=_default_counters)
     last_error: LastError | None = None
+    notify: NotifyTarget | None = None
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
 

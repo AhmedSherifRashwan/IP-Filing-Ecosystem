@@ -311,9 +311,7 @@ def _has_formal_corrections(state: MatterState) -> bool:
 
 
 def _enablement_touches_claims(findings: list[Finding]) -> bool:
-    return any(
-        finding.suggested_target == "P5" or finding.claim_refs for finding in findings
-    )
+    return any(finding.suggested_target == "P5" or finding.claim_refs for finding in findings)
 
 
 def _suggests_narrowing(finding: Finding) -> bool:

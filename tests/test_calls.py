@@ -428,9 +428,7 @@ def test_checked_in_fixtures_satisfy_their_contract(name: str, kind: str) -> Non
     from tests.conftest import REPO_ROOT
 
     fixture = json.loads(
-        (REPO_ROOT / "tests" / "fixtures" / "replays" / f"{name}.json").read_text(
-            encoding="utf-8"
-        )
+        (REPO_ROOT / "tests" / "fixtures" / "replays" / f"{name}.json").read_text(encoding="utf-8")
     )
     text = fixture["response"]["result"]["payloads"][0]["text"]
     parsed = parse_reply(text, kind)
