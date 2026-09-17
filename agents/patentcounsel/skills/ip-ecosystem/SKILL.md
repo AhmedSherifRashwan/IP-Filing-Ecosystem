@@ -69,16 +69,28 @@ ip-disclosure will report its own gaps at Gate 1.
 
 ## 3. Launch
 
+The default is an **unattended** run: the person hands over the idea and gets
+findings back. The runner auto-accepts Gate 1 (terminology lock), Gate 2
+(candidate embodiments) and any reviewer loop-back cap, records each as
+`auto-unattended` in the package's `gate-decisions.md`, and stops only at
+Gate 3 with the finished package. Nothing auto-accepted is treated as
+human-confirmed; the package says so.
+
 ```bash
-cd /Users/ahmed/IP-Filing-Ecosystem && /opt/homebrew/bin/uv run ipfe run \
-  --matter <slug> --background --notify <your session key>
+/opt/homebrew/bin/uv run ipfe run \
+  --matter <slug> --background --unattended --notify <your session key>
 ```
+
+Only if the person says they want to approve each gate themselves, drop
+`--unattended` (or pass `--attended` to clear a remembered one) and add
+`--notify-verbosity steps` so they see every prompt finish.
 
 It returns at once. Then run `ipfe status --matter <slug>` (no `--wait`),
 report the snapshot in two or three sentences, say that the run is hours not
-minutes, that it stops by itself at every human gate, and that updates will
-appear here automatically after each step. **Then end your turn.** Do not add
-"I'll check back" — you will not need to.
+minutes, that independent steps run in parallel, and that milestone updates
+(each phase complete, any loop-back, the final package) will appear here
+automatically. **Then end your turn.** Do not add "I'll check back" — you will
+not need to.
 
 ## 4. Runner updates
 
@@ -89,7 +101,10 @@ re-verify it. Three cases need more than a relay:
 
 - **Gate reached** — read the brief it names with the `read` tool, and in the
   same reply put the decision to the person: what the gate is, the
-  recommendation the brief makes, what that depends on, and the options.
+  recommendation the brief makes, what that depends on, and the options. In an
+  unattended run the only gate you will see is Gate 3: its brief is the
+  findings report. Give the person the substance — what the reviewer found,
+  what remains open, which gates were auto-accepted — and the package paths.
 - **Failure** — quote the error verbatim. "OAuth session expired" means the
   person must run `claude login` in a terminal; then relaunch with
   `ipfe run --matter <slug> --background --notify <your session key>`, which
@@ -113,8 +128,9 @@ decide on the person's behalf. Gate 3 is a qualified patent attorney or agent;
 pass `--by` with that person's name.
 
 Then relaunch with `ipfe run --matter <slug> --background --notify <your session key>`
-and end your turn; updates resume automatically. (Always pass `--notify` on a
-relaunch: a matter opened before you had a session key has none stored.)
+(add `--unattended` again if that is the mode) and end your turn; updates resume
+automatically. (Always pass `--notify` on a relaunch: a matter opened before you
+had a session key has none stored.)
 
 ## 6. When it finishes
 

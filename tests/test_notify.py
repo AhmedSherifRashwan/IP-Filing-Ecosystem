@@ -94,3 +94,11 @@ def test_event_log_observers_see_records_and_never_break_the_log(tmp_path: Path)
     assert seen == ["phase_started"]
     lines = (tmp_path / "log.jsonl").read_text().splitlines()
     assert json.loads(lines[-1])["event"] == "phase_started"
+
+
+def test_milestone_verbosity_drops_per_prompt_chatter() -> None:
+    rec = _rec("call_finished", phase="P2", prompt="07", duration_ms=1000, attempts=1)
+    assert format_event(rec, verbosity="steps") is not None
+    assert format_event(rec, verbosity="milestones") is None
+    done = _rec("phase_completed", phase="P2", version=1, status="complete", trigger="initial")
+    assert format_event(done, verbosity="milestones") is not None

@@ -273,6 +273,7 @@ def build_final_package(
 
     members.append(_gate14(dossier, review.path, target / "gate-14.md"))
     members.append(_residuals(dossier, state, review.path, target / "residual-findings.md"))
+    members.append(_gate_decisions(dossier, state, target / "gate-decisions.md"))
     members.append(
         _write(
             target / "cover-memo.md",
@@ -394,6 +395,30 @@ def _gate14(dossier: Dossier, review_dir: Path, target: Path) -> dict[str, Any]:
     else:
         lines.append("The fourteen-question gate has not been run for this package.")
     return _write(target, "\n".join(lines), source, dossier)
+
+
+def _gate_decisions(dossier: Dossier, state: MatterState, target: Path) -> dict[str, Any]:
+    """Who decided each gate. An unattended run says so here, in the package itself."""
+    lines = [
+        "# Gate decisions",
+        "",
+        "| gate | status | decision | by | at | note |",
+        "|---|---|---|---|---|---|",
+    ]
+    for key, gate in state.gates.items():
+        lines.append(
+            f"| {key} | {gate.status} | {gate.decision or '-'} | {gate.decided_by or '-'} | "
+            f"{gate.decided_at or '-'} | {gate.note or ''} |"
+        )
+    auto = [k for k, g in state.gates.items() if (g.decided_by or "") == "auto-unattended"]
+    if auto:
+        lines += [
+            "",
+            f"> Gates {', '.join(auto)} were accepted automatically in unattended mode. "
+            "Nothing they accepted has been confirmed by a human; treat every embodiment, "
+            "answer and residual finding as candidate until counsel reviews it.",
+        ]
+    return _write(target, "\n".join(lines) + "\n", "state.json", dossier)
 
 
 def _residuals(

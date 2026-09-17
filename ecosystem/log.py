@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -64,6 +65,7 @@ class EventLog:
         self.path = Path(path)
         self.matter = matter
         self._observers: list[Callable[[dict[str, Any]], None]] = []
+        self._write_lock = threading.Lock()
 
     def subscribe(self, observer: Callable[[dict[str, Any]], None]) -> None:
         """Register a callback that sees every record after it is written.
@@ -99,7 +101,7 @@ class EventLog:
         line = json.dumps(record, ensure_ascii=False, default=str)
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as handle:
+            with self._write_lock, self.path.open("a", encoding="utf-8") as handle:
                 handle.write(line + "\n")
         except OSError as exc:  # pragma: no cover - disk-full class of failure
             log.error("event log write failed for %s: %s", self.path, exc)

@@ -17,6 +17,7 @@ process killed between two calls resumes at exactly the next call.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -195,6 +196,21 @@ class Runner:
         self._force_from: str | None = None
         self._inner_loop_flags: str | None = None
 
+    @property
+    def unattended(self) -> bool:
+        """Gates 1, 2 and loop-back caps are auto-accepted; Gate 3 never is."""
+        return bool(getattr(self.state, "unattended", False))
+
+    def _auto_decide(self, gate: str, decision: str) -> None:
+        """Record an unattended decision so the safeguard stays visible, not skipped."""
+        self.gates.decide(
+            gate,
+            decision,
+            by="auto-unattended",
+            note="auto-accepted by the runner in unattended mode; not human-confirmed",
+        )
+        self._save()
+
     # -- entry point --------------------------------------------------------
 
     def run(
@@ -305,14 +321,23 @@ class Runner:
         slot: str | None = None,
         output_ids: dict[str, str] | None = None,
     ) -> list[CallResult]:
-        """Run a list of prompts into one version, skipping what is already there."""
+        """Run a list of prompts into one version, skipping what is already there.
+
+        Prompts that do not depend on each other (their inputs name no sibling
+        output in this phase) run concurrently, up to `max_parallel_calls`.
+        The Caller serialises every state, log and dossier write; only the
+        gateway wait overlaps. Results come back in prompt order.
+        """
         record = self._version_record(phase, version)
-        results: list[CallResult] = []
+        todo: list[tuple[str, str]] = []
         for prompt_id in prompts:
             output_id = (output_ids or {}).get(prompt_id, prompt_id)
             if output_id in record.prompts_done or _output_exists(version.path, output_id):
                 log.info("skipping %s: already in %s", output_id, version.path.name)
                 continue
+            todo.append((prompt_id, output_id))
+
+        def one(prompt_id: str, output_id: str) -> CallResult:
             spec = self.playbook.get(prompt_id)
             ctx = ctx_factory(spec) if ctx_factory else AttemptContext()
             ctx.allow_truncate = ctx.allow_truncate or self.allow_truncate
@@ -320,12 +345,61 @@ class Runner:
                 ctx.slot = slot
             if output_id != prompt_id:
                 ctx.output_prompt_id = output_id
-            self.state.cursor.phase = phase
+            with self.caller.lock:
+                self.state.cursor.phase = phase
             result = self.caller.execute(spec, version.v, ctx)
-            results.append(result)
-            record.prompts_done.append(output_id)
-            self._save()
+            with self.caller.lock:
+                record.prompts_done.append(output_id)
+                self._save()
+            return result
+
+        results: list[CallResult] = []
+        workers = max(1, int(getattr(self.settings, "max_parallel_calls", 1)))
+        for level in self._levels(phase, [p for p, _ in todo]):
+            items = [(p, o) for p, o in todo if p in level]
+            if len(items) == 1 or workers == 1:
+                for prompt_id, output_id in items:
+                    results.append(one(prompt_id, output_id))
+                continue
+            log.info("running %s in parallel: %s", phase, ", ".join(p for p, _ in items))
+            with ThreadPoolExecutor(max_workers=min(workers, len(items))) as pool:
+                futures = {pool.submit(one, p, o): p for p, o in items}
+                done: dict[str, CallResult] = {}
+                errors: list[BaseException] = []
+                for future, prompt_id in futures.items():
+                    try:
+                        done[prompt_id] = future.result()
+                    except BaseException as exc:  # noqa: BLE001 - re-raised below
+                        errors.append(exc)
+                if errors:
+                    raise errors[0]
+            results.extend(done[p] for p, _ in items)
         return results
+
+    def _levels(self, phase: str, prompts: list[str]) -> list[list[str]]:
+        """Group prompts into dependency levels from their `out:<phase>/<id>` inputs."""
+        ids = set(prompts)
+        deps: dict[str, set[str]] = {}
+        for prompt_id in prompts:
+            spec = self.playbook.get(prompt_id)
+            wanted: set[str] = set()
+            for item in [*spec.inputs, *spec.optional_inputs]:
+                if item.startswith(f"out:{phase}/"):
+                    dep = item.split("/", 1)[1]
+                    if dep in ids and dep != prompt_id:
+                        wanted.add(dep)
+            deps[prompt_id] = wanted
+        levels: list[list[str]] = []
+        finished: set[str] = set()
+        remaining = list(prompts)
+        while remaining:
+            level = [p for p in remaining if deps[p] <= finished]
+            if not level:  # a cycle in the prompt library; degrade to sequential
+                level = [remaining[0]]
+            levels.append(level)
+            finished.update(level)
+            remaining = [p for p in remaining if p not in finished]
+        return levels
 
     # -- gates --------------------------------------------------------------
 
@@ -340,6 +414,9 @@ class Runner:
             payload, blocks = self._gate_payload(gate)
             self.gates.request(gate, payload, blocks)
             self._save()
+        if self.unattended and gate != "3":
+            self._auto_decide(gate, "accept")
+            return None
         return StopReason.GATE
 
     def _gate_payload(self, gate: str) -> tuple[dict[str, Any], list[str]]:
@@ -582,8 +659,14 @@ class Runner:
                     cycles=self.state.loopback.cycles.get(category, 0),
                     findings=plan.finding_ids.get(category, []),
                 )
-                self.gates.request(*self._cap_gate_args(category))
+                cap_gate, cap_payload, cap_blocks = self._cap_gate_args(category)
+                self.gates.request(cap_gate, cap_payload, cap_blocks)
                 self._save()
+                if self.unattended:
+                    # The cap still exists and is still recorded; the run just
+                    # answers it the way the package will disclose: residual.
+                    self._auto_decide(cap_gate, "accept-residual")
+                    continue
                 return StopReason.CAP
 
             event = self._start_route(plan, version)
@@ -869,6 +952,9 @@ class Runner:
             self.gates.request("2", payload, blocks)
             event.gate2_requested = True  # type: ignore[attr-defined]
             self._save()
+            if self.unattended:
+                self._auto_decide("2", "accept")
+                return None
             return StopReason.GATE
         if gate_state.status == "pending":
             return StopReason.GATE

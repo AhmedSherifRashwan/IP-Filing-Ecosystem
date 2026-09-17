@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -262,6 +263,10 @@ class Caller:
         self.transport = transport
         self.settings = settings
         self.events = events
+        # Everything but the transport wait runs under this lock, so several
+        # prompts can be in flight at once while state/log/dossier writes stay
+        # serialised. `_send` releases it for the duration of the gateway call.
+        self.lock = threading.RLock()
 
     # -- public -------------------------------------------------------------
 
@@ -272,6 +277,15 @@ class Caller:
         attempt_ctx: AttemptContext | None = None,
     ) -> CallResult:
         """Run one prompt. Raises rather than returning a half-valid result."""
+        with self.lock:
+            return self._execute_locked(spec, version, attempt_ctx)
+
+    def _execute_locked(
+        self,
+        spec: PromptSpec,
+        version: int,
+        attempt_ctx: AttemptContext | None = None,
+    ) -> CallResult:
         ctx = attempt_ctx or AttemptContext()
         agent_id = ctx.agent_override or spec.agent
         phase = ctx.output_phase or spec.phase
@@ -392,6 +406,16 @@ class Caller:
     # -- transport ----------------------------------------------------------
 
     def _send(
+        self, result: CallResult, prompt_path: Path, text: str, timeout_s: int
+    ) -> GatewayReply:
+        """Transport call with the caller lock released: this is the slow part."""
+        self.lock.release()
+        try:
+            return self._send_inner(result, prompt_path, text, timeout_s)
+        finally:
+            self.lock.acquire()
+
+    def _send_inner(
         self, result: CallResult, prompt_path: Path, text: str, timeout_s: int
     ) -> GatewayReply:
         req = CallRequest(

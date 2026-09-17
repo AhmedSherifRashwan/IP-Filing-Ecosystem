@@ -85,10 +85,37 @@ def _duration(ms: Any) -> str:
     return f"{seconds // 60}m{seconds % 60:02d}s"
 
 
-def format_event(record: dict[str, Any], prompt_titles: dict[str, str] | None = None) -> str | None:
-    """One human line for an event, or None when the event is not worth a message."""
+_MILESTONES: Final[frozenset[str]] = frozenset(
+    {
+        "phase_completed",
+        "gate_requested",
+        "gate_decided",
+        "loopback_routed",
+        "loopback_cap_reached",
+        "package_built",
+        "run_failed",
+        "run_stopped",
+        "call_failed",
+        "contract_failed",
+        "terminology_violation",
+    }
+)
+
+
+def format_event(
+    record: dict[str, Any],
+    prompt_titles: dict[str, str] | None = None,
+    verbosity: str = "steps",
+) -> str | None:
+    """One human line for an event, or None when the event is not worth a message.
+
+    `verbosity="milestones"` keeps only phase boundaries, gates, loop-backs,
+    failures and the final package: what an unattended run should say.
+    """
     event = record.get("event", "")
     if event not in _NOTIFIED:
+        return None
+    if verbosity == "milestones" and event not in _MILESTONES:
         return None
     detail: dict[str, Any] = record.get("detail") or {}
     matter = record.get("matter", "")
@@ -174,6 +201,8 @@ def format_event(record: dict[str, Any], prompt_titles: dict[str, str] | None = 
         )
     if event == "package_built":
         kind = detail.get("kind")
+        if verbosity == "milestones" and kind != "final":
+            return None
         if kind == "final":
             return f"{head}: final filing package built at {detail.get('path')}."
         return (
@@ -209,15 +238,17 @@ class SessionNotifier:
         prompt_titles: dict[str, str] | None = None,
         timeout_s: int = 180,
         runner: Any = None,
+        verbosity: str = "steps",
     ) -> None:
         if not session_key.startswith("agent:"):
             raise ValueError("notify session key must look like agent:<id>:<session>")
         self.session_key = session_key
-        self.openclaw_bin = str(openclaw_bin)
+        self.openclaw_bin = str(Path(openclaw_bin).expanduser())
         self.deliver = deliver
         self.log_path = log_path
         self.prompt_titles = prompt_titles or {}
         self.timeout_s = timeout_s
+        self.verbosity = verbosity
         self._runner = runner or self._spawn
         self._lock = threading.Lock()
         self.sent: list[str] = []
@@ -225,7 +256,7 @@ class SessionNotifier:
     # -- observer -----------------------------------------------------------
 
     def on_event(self, record: dict[str, Any]) -> None:
-        text = format_event(record, self.prompt_titles)
+        text = format_event(record, self.prompt_titles, self.verbosity)
         if text is None:
             return
         self.send(text)

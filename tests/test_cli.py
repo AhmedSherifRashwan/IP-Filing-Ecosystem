@@ -551,3 +551,35 @@ def test_run_background_detaches_and_reaches_gate_1(env: Path, replays: Path) ->
             break
         time.sleep(0.5)
     assert status == "awaiting_gate", (env / "demo" / "run.log").read_text()[-2000:]
+
+
+def test_unattended_run_goes_straight_to_gate_3(env: Path, replays: Path) -> None:
+    """Gates 1 and 2 are auto-accepted and recorded as such; Gate 3 still stops."""
+    _new_matter()
+    assert _run(replays, "--unattended") == EXIT["gate"]
+    state = json.loads((env / "demo" / "state.json").read_text())
+    assert state["unattended"] is True
+    assert state["gates"]["1"]["decided_by"] == "auto-unattended"
+    assert state["gates"]["2"]["decided_by"] == "auto-unattended"
+    assert state["gates"]["3"]["status"] == "pending"
+    package = env / "demo" / "07-package"
+    gate_file = next(package.rglob("gate-decisions.md"))
+    assert "unattended mode" in gate_file.read_text()
+    # A human still owns Gate 3; "auto-unattended" is refused as a signatory.
+    assert (
+        main(
+            [
+                "record-decision",
+                "--matter",
+                "demo",
+                "--gate",
+                "3",
+                "--decision",
+                "accept",
+                "--by",
+                "counsel",
+            ]
+        )
+        == 0
+    )
+    assert json.loads((env / "demo" / "state.json").read_text())["status"] == "complete"

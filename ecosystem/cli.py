@@ -131,6 +131,17 @@ def build_parser() -> argparse.ArgumentParser:
             "--notify-deliver", action="store_true", help="also deliver relays to the channel"
         )
         run.add_argument(
+            "--unattended",
+            action="store_true",
+            help="auto-accept Gates 1, 2 and loop-back caps; stop only at Gate 3 (remembered)",
+        )
+        run.add_argument("--attended", action="store_true", help="clear a remembered --unattended")
+        run.add_argument(
+            "--notify-verbosity",
+            choices=["steps", "milestones"],
+            help="how chatty the pushed updates are (default: milestones when unattended)",
+        )
+        run.add_argument(
             "--background",
             action="store_true",
             help="launch detached and return at once; poll with `status --wait`",
@@ -363,10 +374,23 @@ def _attach_notifier(
     The target is persisted so a background child, a later `run`, and
     `record-decision` all push to the same session without being told again.
     """
+    changed = False
+    if getattr(args, "unattended", False):
+        state.unattended = True
+        changed = True
+    if getattr(args, "attended", False):
+        state.unattended = False
+        changed = True
     key = getattr(args, "notify", None)
     if key:
         deliver = bool(getattr(args, "notify_deliver", False))
         state.notify = state_module.NotifyTarget(session_key=key, deliver=deliver)
+        changed = True
+    verbosity = getattr(args, "notify_verbosity", None)
+    if state.notify is not None and (verbosity or getattr(args, "unattended", False)):
+        state.notify.verbosity = verbosity or "milestones"
+        changed = True
+    if changed:
         state_module.save(state, dossier.state_path)
     target = state.notify
     if target is None:
@@ -378,10 +402,11 @@ def _attach_notifier(
         titles = {}
     notifier = SessionNotifier(
         target.session_key,
-        settings.openclaw_bin,
+        settings.resolve_openclaw_bin(),
         deliver=target.deliver,
         log_path=dossier.root / "notify.log",
         prompt_titles=titles,
+        verbosity=target.verbosity,
     )
     events.subscribe(notifier.on_event)
 

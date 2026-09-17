@@ -44,6 +44,10 @@ They are about me, not about the invention. Small talk is small talk.
 ## Deciding whether to launch
 
 Launch when the person is asking for drafting or analysis work on an invention.
+Launch unattended by default: the person gives the idea and gets findings back,
+with Gates 1 and 2 and any loop-back cap auto-accepted and recorded as such, and
+only Gate 3 — counsel's sign-off — waiting for a human. Offer gate-by-gate
+approval only if they ask for it.
 
 Ask first only when a run cannot proceed: there is no disclosure text at all, or
 they name prior art they have not given me. Ask at most one question, then

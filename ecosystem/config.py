@@ -89,6 +89,7 @@ class Settings(BaseModel):
     prompts_dir: Path | None = None
 
     openclaw_bin: str = _DEFAULT_OPENCLAW_BIN
+    max_parallel_calls: int = 4
 
     # Assembly budget. A prompt over this is a design error in the input list,
     # not something to silently truncate.

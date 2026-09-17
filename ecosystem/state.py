@@ -87,6 +87,7 @@ class NotifyTarget(BaseModel):
 
     session_key: str
     deliver: bool = False
+    verbosity: Literal["steps", "milestones"] = "steps"
 
 
 class MatterInfo(BaseModel):
@@ -265,6 +266,7 @@ class MatterState(BaseModel):
     counters: dict[str, int] = Field(default_factory=_default_counters)
     last_error: LastError | None = None
     notify: NotifyTarget | None = None
+    unattended: bool = False
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
 
