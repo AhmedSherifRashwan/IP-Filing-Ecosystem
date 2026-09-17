@@ -365,14 +365,17 @@ _PROSE_WORDS_RE = re.compile(
 
 def _is_bare_query(text: str) -> bool:
     """True for a quoted/boolean search string or a plain classification list."""
+    text = text.replace("`", "")
+    text = re.sub(r"^[^\"(]{0,40}?:\s*", "", text)  # "CPC theme: ..." style labels
     if _PROSE_WORDS_RE.search(text):
         return False
     if _QUOTED_RE.search(text) or _BOOLEAN_RE.search(text):
         return True
-    codes = _CPC_CODE_RE.findall(text)
+    bare = re.sub(r"\b(?:cpc|ipc)\s*[=:]\s*", "", text, flags=re.IGNORECASE)
+    codes = _CPC_CODE_RE.findall(bare)
     if not codes:
         return False
-    leftover = _CPC_CODE_RE.sub("", text)
+    leftover = _CPC_CODE_RE.sub("", bare)
     return not re.search(r"[A-Za-z]{3,}", leftover)
 
 
@@ -391,9 +394,11 @@ def queries_from_markdown(markdown: str, max_queries: int = 12) -> list[str]:
             continue
         seen.add(key)
         out.append(query)
-        if len(out) >= max_queries:
-            break
-    return out
+    # Phrase/boolean strings search better than a bare list of classification
+    # codes; run them first so a throttled session still gets the good ones.
+    phrased = [q for q in out if _QUOTED_RE.search(q) or _BOOLEAN_RE.search(q)]
+    codes_only = [q for q in out if q not in phrased]
+    return (phrased + codes_only)[:max_queries]
 
 
 def _latest_06_envelope(dossier: Dossier) -> tuple[Path, dict[str, Any]] | None:

@@ -160,12 +160,13 @@ Ready-to-run search strings:
 
     queries = [q.text for q in queries_from_phase2(dossier)]
 
+    # Phrase/boolean strings first; a bare classification code runs last.
     assert queries == [
         '"valve core" "tyre sealant"',
         '("purge gap" OR "self-cleaning") valve',
-        "cpc:F16K15/20",
         '"Northbridge Cycle Components" valve',
         '"superelastic seat" NEAR poppet',
+        "cpc:F16K15/20",
     ]
     assert all(q.source.startswith("06-") for q in queries_from_phase2(dossier))
 
