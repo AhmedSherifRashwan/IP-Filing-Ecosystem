@@ -662,6 +662,11 @@ class Caller:
         policy = self.settings.terminology_policy
         if policy == "block" and spec.phase not in block_phases:
             policy = "warn"
+        # An unattended run has nobody to fix a stuck synonym; stopping would
+        # only strand the matter. The violation is logged as drift and the
+        # reviewer's consistency audit (Prompt 38) reports it as a correction.
+        if policy == "block" and getattr(self.state, "unattended", False):
+            policy = "warn"
         if policy == "warn":
             log.warning(
                 "terminology violations kept (policy warn, phase %s) on %s: %s",

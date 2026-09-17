@@ -47,3 +47,11 @@ def test_specification_and_claims_phases_block(tmp_path: Path, phase: str) -> No
     spec = SimpleNamespace(phase=phase, id="22")
     with pytest.raises(TerminologyBlocked):
         caller._settle_terminology(result, spec, _report())
+
+
+def test_unattended_runs_never_block_on_terminology(tmp_path: Path) -> None:
+    caller = _caller(tmp_path)
+    caller.state.unattended = True
+    result = SimpleNamespace(call_id="c", output_path=None, terminology_warned=[])
+    spec = SimpleNamespace(phase="P4", id="19")
+    caller._settle_terminology(result, spec, _report())  # logged, not raised
