@@ -247,6 +247,8 @@ def normalise_query(raw: str) -> str:
     text = text.replace("**", "").replace("__", "")
     text = text.strip().strip("*_ ").strip()
 
+    text = _cql_to_google(text)
+
     label = _LABEL_RE.match(text)
     if label and label.group(1).strip().lower() not in _KEEP_LABELS:
         stripped = text[label.end() :].strip()
@@ -266,6 +268,31 @@ def normalise_query(raw: str) -> str:
     return text
 
 
+_SEARCH_LABEL_RE = re.compile(r"^\s*S-?[A-Z]?\d+[a-z]?\s*[:.)-]?\s+", re.IGNORECASE)
+_CQL_FIELD_RE = re.compile(r"\b(?:ti|ab|cl|desc|ctxt|txt|ta|tac)\s*=\s*", re.IGNORECASE)
+_CQL_CLASS_RE = re.compile(
+    r"\b(?:cpc|ipc)\s*=\s*([A-H]\d{2}[A-Z]\s?\d{1,4}(?:/\d{1,6})?)(?:/low)?", re.I
+)
+_CQL_APPLICANT_RE = re.compile(r"\band\s+pa\s*=\s*\(?[^)]*\)?", re.IGNORECASE)
+
+
+def _cql_to_google(text: str) -> str:
+    """Turn an Espacenet CQL-style string into what Google Patents accepts.
+
+    Prompt 06 often writes `S-A1 ctxt=("a" or "b") and cpc=B60C29/low`. Field
+    prefixes carry no meaning on Google Patents, `or` must be upper case,
+    `and` is implicit, and a classification is searched as its bare code.
+    """
+    out = _SEARCH_LABEL_RE.sub("", text)
+    out = _CQL_APPLICANT_RE.sub(" ", out)
+    out = _CQL_CLASS_RE.sub(lambda m: "cpc:" + m.group(1).replace(" ", ""), out)
+    out = _CQL_FIELD_RE.sub("", out)
+    out = re.sub(r"\s+or\s+", " OR ", out)
+    out = re.sub(r"\s+and\s+", " ", out, flags=re.IGNORECASE)
+    out = re.sub(r"\s+not\s+", " -", out, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", out).strip()
+
+
 def _looks_like_query(text: str) -> bool:
     """A search string, not prose: it quotes, it uses an operator, or it is a code."""
     if not text or len(text) > MAX_QUERY_CHARS:
@@ -279,20 +306,39 @@ def _looks_like_query(text: str) -> bool:
 
 
 def _candidate_lines(markdown: str) -> Iterator[str]:
-    """Yield the fragments of a Prompt 06 deliverable that could be search strings."""
+    """Yield the fragments of a Prompt 06 deliverable that could be search strings.
+
+    A fenced block is one search string even when it wraps over several lines
+    (the Espacenet-style `S-A1 ctxt=(...) and ctxt=(...)` layout), so it is
+    joined before it is judged. Table cells are yielded only when they read as
+    a bare query; a cell of prose about a classification is not one.
+    """
     fence: str | None = None
+    block: list[str] = []
     for line in markdown.splitlines():
         fence_match = _FENCE_RE.match(line)
         if fence_match:
             token = fence_match.group(1)
             if fence is None:
                 fence = token
+                block = []
             elif line.strip().startswith(fence):
                 fence = None
+                joined = " ".join(part.strip() for part in block if part.strip())
+                if joined:
+                    yield joined
+                block = []
             continue
         if fence is not None:
-            if line.strip():
-                yield line.strip()
+            # A new unindented line starts a new string; an indented one (or a
+            # line that opens with a boolean operator) continues the previous.
+            continuation = line[:1].isspace() or re.match(r"\s*(and|or|not)\b", line, re.IGNORECASE)
+            if block and not continuation:
+                joined = " ".join(part.strip() for part in block if part.strip())
+                if joined:
+                    yield joined
+                block = []
+            block.append(line)
             continue
 
         stripped = line.strip()
@@ -302,11 +348,32 @@ def _candidate_lines(markdown: str) -> Iterator[str]:
             if _TABLE_SEPARATOR_RE.match(stripped):
                 continue
             for cell in stripped.strip("|").split("|"):
-                if cell.strip():
-                    yield cell.strip()
+                cell = cell.strip()
+                if cell and _is_bare_query(cell):
+                    yield cell
             continue
-        if _LIST_MARKER_RE.match(line):
+        if _LIST_MARKER_RE.match(line) and _is_bare_query(_LIST_MARKER_RE.sub("", stripped)):
             yield stripped
+
+
+_PROSE_WORDS_RE = re.compile(
+    r"\b(verify|confirm|check|guess|assum|whether|covers|subgroups?|its groups|"
+    r"cross-reference|see |the |which |must )",
+    re.IGNORECASE,
+)
+
+
+def _is_bare_query(text: str) -> bool:
+    """True for a quoted/boolean search string or a plain classification list."""
+    if _PROSE_WORDS_RE.search(text):
+        return False
+    if _QUOTED_RE.search(text) or _BOOLEAN_RE.search(text):
+        return True
+    codes = _CPC_CODE_RE.findall(text)
+    if not codes:
+        return False
+    leftover = _CPC_CODE_RE.sub("", text)
+    return not re.search(r"[A-Za-z]{3,}", leftover)
 
 
 def queries_from_markdown(markdown: str, max_queries: int = 12) -> list[str]:

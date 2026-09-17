@@ -503,3 +503,25 @@ def test_run_search_sends_only_query_strings(dossier: Dossier) -> None:
 
     assert fetch.sent_queries == [VALVE_QUERY, SEAT_QUERY]
     assert all("SECRET-NUCLEUS-PHRASE" not in url for url in fetch.calls)
+
+
+def test_espacenet_style_fenced_blocks_become_google_queries() -> None:
+    from ecosystem.search import queries_from_markdown
+
+    md = (
+        '**Search strings.**\n\n```\nS-A1  ctxt=("valve core" or "valve insert")\n'
+        '      and ctxt=("sealant" or "tyre sealant")\n```\n```\n'
+        'S-A2  cpc=B60C29/low and ctxt=("clog*" or "deposit*")\n```\n\n'
+        "| Theme | Codes | Confidence | Note |\n|---|---|---|---|\n"
+        "| Seats | F16K 25/00, F16K 1/42 | `[medium]` | "
+        'Seat construction; confirm which group carries "resilient seat ring" |\n'
+        "| Two-stage | F16K 31/00 subgroups; F16K 1/44 | `[low]` | Guess — verify in the scheme |\n"
+        "- Terms (OR within the family)\n"
+    )
+    queries = queries_from_markdown(md)
+    assert queries[0] == '("valve core" OR "valve insert") ("sealant" OR "tyre sealant")'
+    assert queries[1] == 'cpc:B60C29 ("clog*" OR "deposit*")'
+    assert any("F16K" in q and "25/00" in q for q in queries)
+    assert not any(
+        "confirm" in q or "Guess" in q or "Terms (OR" in q or "subgroups" in q for q in queries
+    )
