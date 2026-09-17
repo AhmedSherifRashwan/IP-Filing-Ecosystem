@@ -47,6 +47,8 @@ EVENTS: Final[frozenset[str]] = frozenset(
         "notify_failed",
         "search_completed",
         "search_unavailable",
+        "quota_wait",
+        "quota_resumed",
     }
 )
 

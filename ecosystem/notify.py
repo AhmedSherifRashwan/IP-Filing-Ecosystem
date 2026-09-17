@@ -116,6 +116,8 @@ _MILESTONES: Final[frozenset[str]] = frozenset(
         "terminology_violation",
         "search_completed",
         "search_unavailable",
+        "quota_wait",
+        "quota_resumed",
     }
 )
 
@@ -226,6 +228,15 @@ def format_event(
         return (
             f"{head}: review package assembled (description, figures, claims only) for ip-reviewer."
         )
+    if event == "quota_wait":
+        mins = max(1, int(detail.get("wait_s") or 0) // 60)
+        return (
+            f"{head}: paused — the model provider reports a usage limit "
+            f"({detail.get('error')}). The run is waiting about {mins} min and will retry "
+            f"by itself; nothing is lost."
+        )
+    if event == "quota_resumed":
+        return f"{head}: provider limit cleared; the run resumed from where it paused."
     if event == "search_completed":
         return (
             f"{head}: prior-art search done — {detail.get('queries')} queries sent to Google "

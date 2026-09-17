@@ -87,6 +87,8 @@ class PromptTooLarge(GatewayError):
 # Substrings that classify a gateway or provider error. Ordered by specificity.
 _ERROR_SIGNATURES: Final[tuple[tuple[str, type[GatewayError]], ...]] = (
     ("rate limit", GatewayRateLimited),
+    ("session limit", GatewayRateLimited),
+    ("hit your", GatewayRateLimited),
     ("rate_limit", GatewayRateLimited),
     ("too many requests", GatewayRateLimited),
     ("429", GatewayRateLimited),

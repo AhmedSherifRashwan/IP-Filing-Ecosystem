@@ -23,8 +23,9 @@ import json
 import logging
 import re
 import threading
+import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -46,6 +47,7 @@ from ecosystem.terminology import LockedTable, TermReport, Violation, append_dri
 from ecosystem.transport import (
     AutoTransport,
     CallRequest,
+    GatewayRateLimited,
     GatewayReply,
     Transport,
     call_with_backoff,
@@ -240,6 +242,29 @@ class CallResult:
 # ---------------------------------------------------------------------------
 
 
+_RESET_RE = re.compile(r"resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)", re.IGNORECASE)
+
+
+def _seconds_until_reset(message: str, now: datetime | None = None) -> float | None:
+    """Seconds until the local reset time a provider message names, plus a margin.
+
+    "You've hit your session limit · resets 3:20pm" is the Claude CLI wording;
+    the time is in the machine's local zone. Unparseable → None (poll instead).
+    """
+    match = _RESET_RE.search(message)
+    if not match:
+        return None
+    hour = int(match.group(1)) % 12
+    minute = int(match.group(2) or 0)
+    if match.group(3).lower() == "pm":
+        hour += 12
+    current = now or datetime.now().astimezone()
+    target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= current:
+        target += timedelta(days=1)
+    return (target - current).total_seconds() + 90.0
+
+
 class Caller:
     """Executes prompt specs against a transport and writes the results down.
 
@@ -408,12 +433,48 @@ class Caller:
     def _send(
         self, result: CallResult, prompt_path: Path, text: str, timeout_s: int
     ) -> GatewayReply:
-        """Transport call with the caller lock released: this is the slow part."""
+        """Transport call with the caller lock released: this is the slow part.
+
+        A provider quota or session limit is not a failure of the matter; an
+        unattended run that dies on it strands hours of work. So the call waits
+        (polling, or until the reset time the message names) and retries, for
+        up to `quota_wait_max_s`, telling the human through the event log.
+        """
         self.lock.release()
         try:
-            return self._send_inner(result, prompt_path, text, timeout_s)
+            waited = 0.0
+            while True:
+                try:
+                    return self._send_inner(result, prompt_path, text, timeout_s)
+                except GatewayRateLimited as exc:
+                    max_wait = float(getattr(self.settings, "quota_wait_max_s", 6 * 3600))
+                    poll = float(getattr(self.settings, "quota_poll_s", 600))
+                    if waited >= max_wait:
+                        raise
+                    delay = min(_seconds_until_reset(str(exc)) or poll, max_wait - waited)
+                    self.events.emit(
+                        "quota_wait",
+                        phase=result.phase,
+                        prompt=result.prompt_id,
+                        call_id=result.call_id,
+                        error=str(exc),
+                        wait_s=int(delay),
+                        waited_s=int(waited),
+                    )
+                    self._sleep(delay)
+                    waited += delay
+                    self.events.emit(
+                        "quota_resumed",
+                        phase=result.phase,
+                        prompt=result.prompt_id,
+                        call_id=result.call_id,
+                        waited_s=int(waited),
+                    )
         finally:
             self.lock.acquire()
+
+    # Injectable so tests never sleep.
+    _sleep = staticmethod(time.sleep)
 
     def _send_inner(
         self, result: CallResult, prompt_path: Path, text: str, timeout_s: int
