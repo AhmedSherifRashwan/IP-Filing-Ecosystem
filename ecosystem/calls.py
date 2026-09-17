@@ -652,9 +652,20 @@ class Caller:
         result.terminology_warned = list(report.warnings)
         if not report.violations:
             return
-        if self.settings.terminology_policy == "warn":
+        # The lock is binding where text becomes the specification or the
+        # claims. Earlier phases name competitors' variants and rejected
+        # synonyms as part of their job (a design-around *is* the avoided
+        # term), so there a violation is drift to log, not a reason to stop.
+        block_phases = tuple(
+            getattr(self.settings, "terminology_block_phases", ("P4", "P5", "REVIEW"))
+        )
+        policy = self.settings.terminology_policy
+        if policy == "block" and spec.phase not in block_phases:
+            policy = "warn"
+        if policy == "warn":
             log.warning(
-                "terminology violations kept under --terminology warn on %s: %s",
+                "terminology violations kept (policy warn, phase %s) on %s: %s",
+                spec.phase,
                 result.call_id,
                 ", ".join(v.term for v in report.violations),
             )

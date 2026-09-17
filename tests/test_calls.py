@@ -239,18 +239,18 @@ def test_a_persistent_violation_blocks_and_rejects_the_output(
     dossier: Dossier, state: MatterState, playbook: Playbook, settings: Settings, replays: Path
 ) -> None:
     _lock(dossier)
-    spec = _spec()
+    spec = _spec(phase="P4", agent="ip-spec")
     _fixture(
         replays,
-        "demo-p3-t1-v1",
+        "demo-p4-t1-v1",
         drafting_reply("t1", ["Section"], section_text={"Section": BAD_TERM}),
     )
 
     with pytest.raises(TerminologyBlocked) as excinfo:
-        _caller(dossier, state, playbook, settings, replays).execute(spec, _version(dossier))
+        _caller(dossier, state, playbook, settings, replays).execute(spec, _version(dossier, "P4"))
 
     assert {v.term for v in excinfo.value.violations} >= {"rubber grommet"}
-    written = next(dossier.versions("P3")[-1].path.glob("t1-*.md"))
+    written = next(dossier.versions("P4")[-1].path.glob("t1-*.md"))
     frontmatter, _ = split_frontmatter(written.read_text(encoding="utf-8"))
     assert frontmatter["status"] == "rejected"
     assert state.terminology.violations_blocked >= 1
