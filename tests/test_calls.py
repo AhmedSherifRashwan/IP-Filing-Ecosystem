@@ -215,19 +215,21 @@ def test_a_violation_gets_one_fix_turn_and_then_passes(
     dossier: Dossier, state: MatterState, playbook: Playbook, settings: Settings, replays: Path
 ) -> None:
     _lock(dossier)
-    spec = _spec()
+    spec = _spec(phase="P4", agent="ip-spec")
     _fixture(
         replays,
-        "demo-p3-t1-v1.turn1",
+        "demo-p4-t1-v1.turn1",
         drafting_reply("t1", ["Section"], section_text={"Section": BAD_TERM}),
     )
-    _fixture(replays, "demo-p3-t1-v1.turn2", drafting_reply("t1", ["Section"]))
+    _fixture(replays, "demo-p4-t1-v1.turn2", drafting_reply("t1", ["Section"]))
 
-    result = _caller(dossier, state, playbook, settings, replays).execute(spec, _version(dossier))
+    result = _caller(dossier, state, playbook, settings, replays).execute(
+        spec, _version(dossier, "P4")
+    )
 
     assert result.terminology_corrected is True
     assert state.counters["terminology_violations"] == 1
-    fix = (dossier.runs_dir / "demo-p3-t1-v1-a1" / "prompt.md").read_text(encoding="utf-8")
+    fix = (dossier.runs_dir / "demo-p4-t1-v1-a1" / "prompt.md").read_text(encoding="utf-8")
     assert "rubber grommet" in fix
     assert "preferred: **seat ring**" in fix
     assert result.output_path is not None
