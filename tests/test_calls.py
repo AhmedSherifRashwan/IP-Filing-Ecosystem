@@ -451,3 +451,24 @@ def test_analysis_prompts_request_the_tier_model(
     ).execute(spec, _version(dossier, "P2"))
     assert transport.calls[-1].model == "openai/gpt-5.6-sol"
     assert state.agent_runs[-1].requested_model == "openai/gpt-5.6-sol"
+
+
+def test_no_fix_turn_where_the_lock_only_warns(
+    dossier: Dossier, state: MatterState, playbook: Playbook, settings: Settings, replays: Path
+) -> None:
+    """Phase 3 violations are drift: one call, no correction turn, no exception."""
+    from tests.fakes import FakeTransport
+
+    _lock(dossier)
+    spec = _spec(phase="P3", agent="ip-embodiment")
+    _fixture(
+        replays,
+        "demo-p3-t1-v1",
+        drafting_reply("t1", ["Section"], section_text={"Section": BAD_TERM}),
+    )
+    transport = FakeTransport(fixtures_dir=replays)
+    result = Caller(
+        dossier, state, playbook, transport, settings, EventLog(dossier.log_path, "demo")
+    ).execute(spec, _version(dossier))
+    assert len(transport.calls) == 1
+    assert result.attempts == 1

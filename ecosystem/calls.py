@@ -410,7 +410,7 @@ class Caller:
         result.parsed = parsed
 
         report = self._terminology(result, spec, parsed)
-        if report is not None and report.violations:
+        if report is not None and report.violations and self._terminology_would_block(spec):
             parsed, attempt, report = self._terminology_correction(
                 result, spec, parsed, report, attempt
             )
@@ -558,7 +558,9 @@ class Caller:
                 result,
                 spec,
                 attempt,
-                self._contract_correction_text(spec, first),
+                self._contract_correction_text(
+                    spec, first, result.assembled.text, result.reply_text or ""
+                ),
             )
             result.reply_text = retry.text
             result.contract_corrected = True
@@ -574,16 +576,27 @@ class Caller:
                 )
                 raise ContractFailed(result.call_id, second.message) from second
 
-    def _contract_correction_text(self, spec: PromptSpec, error: ContractError) -> str:
-        return "\n\n".join(
-            [
-                "## Output contract",
-                self._contract_fragment(spec),
-                "## What was wrong",
-                error.message,
-                _CORRECTION_TAIL,
-            ]
-        )
+    def _contract_correction_text(
+        self,
+        spec: PromptSpec,
+        error: ContractError,
+        original_prompt: str = "",
+        previous_reply: str = "",
+    ) -> str:
+        """A correction turn that stands on its own.
+
+        Not every runtime carries the session forward (a tiered call through
+        `openclaw agent --model` starts with no memory of the task), so the
+        turn restates the task and the reply being corrected instead of
+        assuming the model still has them.
+        """
+        parts = ["## Output contract", self._contract_fragment(spec)]
+        if original_prompt:
+            parts += ["## The task you were given", original_prompt]
+        if previous_reply:
+            parts += ["## Your previous reply (to be corrected)", previous_reply]
+        parts += ["## What was wrong", error.message, _CORRECTION_TAIL]
+        return "\n\n".join(parts)
 
     def _contract_fragment(self, spec: PromptSpec) -> str:
         name = contract_fragment_name(spec.kind)
@@ -664,22 +677,45 @@ class Caller:
         self.state.bump("terminology_violations")
         attempt += 1
         retry = self._correction_turn(
-            result, spec, attempt, self._terminology_correction_text(spec, report, table)
+            result,
+            spec,
+            attempt,
+            self._terminology_correction_text(
+                spec, report, table, result.assembled.text, result.reply_text or ""
+            ),
         )
         result.terminology_corrected = True
         try:
             reparsed = parse_reply(retry.text, spec.kind)
         except ContractError as exc:
-            # A terminology fix that breaks the contract is a contract failure:
-            # the reply is unusable either way, and the human gets both errors.
-            raise ContractFailed(result.call_id, exc.message) from exc
+            # The original reply was valid; a fix turn that comes back broken
+            # must not throw it away. Keep the original and let the settle
+            # step decide what its remaining violations mean.
+            log.warning(
+                "terminology fix turn on %s broke the contract (%s); keeping the original reply",
+                result.call_id,
+                exc.message,
+            )
+            self.events.emit(
+                "contract_corrected",
+                phase=spec.phase,
+                prompt=spec.id,
+                call_id=result.call_id,
+                error=f"terminology fix turn discarded: {exc.message}",
+            )
+            return parsed, attempt, report
         result.reply_text = retry.text
         envelope = reparsed.envelope if isinstance(reparsed.envelope, DraftingEnvelope) else None
         again = check_output(reparsed.deliverable, envelope, table, spec.kind, spec.id)
         return reparsed, attempt, again
 
     def _terminology_correction_text(
-        self, spec: PromptSpec, report: TermReport, table: LockedTable
+        self,
+        spec: PromptSpec,
+        report: TermReport,
+        table: LockedTable,
+        original_prompt: str = "",
+        previous_reply: str = "",
     ) -> str:
         offending = "\n".join(
             f"- `{v.term}` ({v.rule}) in: ...{v.context}..." for v in report.violations
@@ -703,9 +739,30 @@ class Caller:
                 "maps to and a reason. Do not change anything else.",
                 "## Output contract",
                 self._contract_fragment(spec),
+                *(["## The task you were given", original_prompt] if original_prompt else []),
+                *(
+                    ["## Your previous reply (to be corrected)", previous_reply]
+                    if previous_reply
+                    else []
+                ),
                 _CORRECTION_TAIL,
             ]
         )
+
+    def _terminology_would_block(self, spec: PromptSpec) -> bool:
+        """Whether a remaining violation stops the run for this prompt.
+
+        Only then is a fix turn worth a call; elsewhere the violation is drift
+        for the reviewer's consistency audit. Mirrors `_settle_terminology`.
+        """
+        if self.settings.terminology_policy != "block":
+            return False
+        if getattr(self.state, "unattended", False):
+            return False
+        block_phases = tuple(
+            getattr(self.settings, "terminology_block_phases", ("P4", "P5", "REVIEW"))
+        )
+        return spec.phase in block_phases
 
     def _settle_terminology(self, result: CallResult, spec: PromptSpec, report: TermReport) -> None:
         """Record drift, then block or warn on anything still violating."""
