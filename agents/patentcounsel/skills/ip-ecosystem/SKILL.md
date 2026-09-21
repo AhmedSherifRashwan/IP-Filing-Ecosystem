@@ -94,28 +94,39 @@ not need to.
 
 ## 4. Runner updates
 
-A message starting `[IPFE runner update]` is the runner itself, not the person.
-It is ground truth at that moment. Relay it in one to three plain sentences
-(which phase, which prompt, how long, what is next) and do not run tools to
-re-verify it. Three cases need more than a relay:
+A message starting `[IPFE runner update]` is the runner's ticker, not the
+person. It is a list of short progress lines, newest last:
 
-- **Gate reached** — read the brief it names with the `read` tool, and in the
-  same reply put the decision to the person: what the gate is, the
-  recommendation the brief makes, what that depends on, and the options. In an
-  unattended run the only gate you will see is Gate 3: its brief is the
-  findings report. Give the person the substance — what the reviewer found,
-  what remains open, which gates were auto-accepted — and the package paths.
-- **Failure** — quote the error verbatim. "OAuth session expired" means the
-  person must run `claude login` in a terminal; then relaunch with
+```
+[IPFE runner update] payaxle-guard · 12:03
+P4 spec · 19 Definitions · started (ip-spec, 402k chars)
+P4 spec · 19 Definitions · done 2m41s
+P4 spec · 20 Drawings plan · started (ip-spec, 403k chars)
+```
+
+**Post those lines to the person exactly as they are, as a compact list, and
+nothing else.** No preamble, no summary, no interpretation, no tool calls to
+re-check them. They are already the ground truth. Three kinds of line need one
+short addition underneath the list:
+
+- **`GATE n`** — read the brief it names with the `read` tool and put the
+  decision to the person: what the gate is, the recommendation the brief makes,
+  what it depends on, and the options.
+- **`REVIEW REQUIRED`** — say which finding category hit the loop-back cap and
+  the four options: `accept-residual`, `manual-fix`, `narrow`, `abort`.
+- **`FAILED`** — quote the error verbatim. "OAuth session expired" means the
+  person runs `claude login` in a terminal, then you relaunch with
   `ipfe run --matter <slug> --background --notify <your session key>`, which
-  resumes where it stopped.
-  Never delete or recreate a matter to recover.
-- **REVIEW REQUIRED / loop-back cap** — lead with that phrase, say which
-  finding category hit the cap and the four options: `accept-residual`,
-  `manual-fix`, `narrow`, `abort`.
+  resumes where it stopped. Never delete or recreate a matter to recover.
+
+Everything else — `retrying`, `reply repaired`, `skipped, previous text
+stands`, `kept as partial output`, `paused · provider limit` — is the runner
+handling a problem by itself. Relay the line and say nothing more; the run is
+still going.
 
 If the person asks "any update?", run `ipfe status --matter <slug>` (no
-`--wait`) and answer from its output in the same reply.
+`--wait`) and answer from its `recent` block in the same reply. The full
+ticker is always in `dossiers/<slug>/progress.md`.
 
 ## 5. Recording a decision
 

@@ -58,22 +58,25 @@ under-specified work, it surfaces it.
 ## While a run is going
 
 The run is launched in the background with `--notify` set to my own session
-key, and the runner pushes an update into this conversation after every step:
-phase started, each prompt finished with its duration, phase complete, gate
-reached, failure. Those arrive as messages beginning `[IPFE runner update]`.
-They are the runner speaking, not the person, and they are true as of that
-moment: I relay each one in one to three plain sentences and do not run tools
-to re-check it.
+key, and the runner pushes its ticker into this conversation: one short line
+per step, batched about once a minute, and at once for anything that needs a
+human. A message beginning `[IPFE runner update]` is the runner speaking, not
+the person.
+
+I post those lines exactly as they are, as a compact list, and add nothing —
+no summary, no interpretation, no tools to re-check them. Only three kinds of
+line get anything underneath: `GATE n` (read the brief and put the decision),
+`REVIEW REQUIRED` (name the category and the four options), and `FAILED`
+(quote the error verbatim). Lines about a retry, a repaired reply, a skipped
+revision or a provider pause are the runner coping on its own; I relay them
+and say nothing more.
 
 I do not poll. No `status --wait`, no background exec, no "I'll check back and
 let you know". When I launch a run I report the first status snapshot, say the
 honest shape of the wait — hours, not minutes, stopping at each human gate —
-and end my turn. If the person asks for an update, I run `ipfe status` once and
-answer from it in the same reply.
-
-If the run fails, I report the last error verbatim. A provider login failure
-is fixed by the person, in a terminal, with `claude login`; the run then
-resumes from where it stopped.
+and end my turn. If the person asks for an update, I run `ipfe status` once
+and answer from its `recent` block in the same reply; the full ticker is in
+`dossiers/<slug>/progress.md`.
 
 ## When the runner asks for a decision
 

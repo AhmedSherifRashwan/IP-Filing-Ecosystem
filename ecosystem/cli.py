@@ -135,6 +135,12 @@ def build_parser() -> argparse.ArgumentParser:
             "--notify-deliver", action="store_true", help="also deliver relays to the channel"
         )
         run.add_argument(
+            "--notify-interval",
+            type=int,
+            metavar="SECONDS",
+            help="seconds between pushed progress batches (default 60; urgent lines go at once)",
+        )
+        run.add_argument(
             "--unattended",
             action="store_true",
             help="auto-accept Gates 1, 2 and loop-back caps; stop only at Gate 3 (remembered)",
@@ -386,17 +392,24 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"matter {args.matter} is complete; nothing to run.")
         return EXIT["ok"]
 
-    _attach_notifier(args, dossier, state, events, settings)
+    notifier = _attach_notifier(args, dossier, state, events, settings)
     if args.background:
         return _spawn_background(args, dossier, settings)
 
     transport = _transport(args, settings)
-    with Lock(dossier.root):
-        # Re-read under the lock: another process may have decided a gate
-        # between our load and our turn.
-        state = state_module.load(dossier.state_path)
-        runner = Runner(dossier, state, playbook, transport, settings, events, args.allow_truncate)
-        reason = runner.run(until=args.until, from_phase=args.from_phase)
+    try:
+        with Lock(dossier.root):
+            # Re-read under the lock: another process may have decided a gate
+            # between our load and our turn.
+            state = state_module.load(dossier.state_path)
+            runner = Runner(
+                dossier, state, playbook, transport, settings, events, args.allow_truncate
+            )
+            reason = runner.run(until=args.until, from_phase=args.from_phase)
+    finally:
+        # Whatever happened, the last ticker lines reach the human.
+        if notifier is not None:
+            notifier.close()
 
     _print_stop(reason, dossier, state, settings)
     return _STOP_EXIT[reason]
@@ -408,7 +421,7 @@ def _attach_notifier(
     state: MatterState,
     events: EventLog,
     settings: Settings,
-) -> None:
+) -> SessionNotifier | None:
     """Remember a `--notify` target on the matter and subscribe the relay to the log.
 
     The target is persisted so a background child, a later `run`, and
@@ -440,7 +453,7 @@ def _attach_notifier(
         state_module.save(state, dossier.state_path)
     target = state.notify
     if target is None:
-        return
+        return None
     try:
         playbook = load_playbook(settings.prompts_path)
         titles = {pid: spec.title for pid, spec in playbook.prompts.items()}
@@ -451,10 +464,14 @@ def _attach_notifier(
         settings.resolve_openclaw_bin(),
         deliver=target.deliver,
         log_path=dossier.root / "notify.log",
+        progress_path=dossier.progress_path,
         prompt_titles=titles,
         verbosity=target.verbosity,
+        interval_s=int(getattr(args, "notify_interval", None) or settings.notify_interval_s),
+        matter=dossier.slug,
     )
     events.subscribe(notifier.on_event)
+    return notifier
 
 
 _BACKGROUND_PASSTHROUGH: Final[tuple[str, ...]] = (
@@ -961,6 +978,7 @@ def _status_report(dossier: Dossier, state: MatterState, settings: Settings) -> 
     pending = [key for key, gs in state.gates.items() if gs.status == "pending"]
     if pending:
         report["awaiting_decision"] = _awaiting(dossier, state, pending[0])
+    report["progress"] = _progress_tail(dossier, 12)
     return report
 
 
@@ -993,6 +1011,19 @@ def _awaiting(dossier: Dossier, state: MatterState, gate: str) -> dict[str, Any]
         "blocks": state.gate(gate).blocks,
         "files": payload.get("files", []),
     }
+
+
+def _progress_tail(dossier: Dossier, n: int) -> list[str]:
+    """The last ticker lines: what the run is doing, without reading the log."""
+    path = dossier.progress_path
+    if not path.is_file():
+        return []
+    try:
+        return [
+            line.rstrip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+        ][-n:]
+    except OSError:
+        return []
 
 
 def _render_status(report: dict[str, Any]) -> str:
@@ -1029,6 +1060,9 @@ def _render_status(report: dict[str, Any]) -> str:
         f"calls       {report['counters'].get('calls', 0)} "
         f"({report['counters'].get('contract_corrections', 0)} contract corrections)",
     ]
+    if report.get("progress"):
+        lines += ["", "recent      (dossiers/<slug>/progress.md has the full ticker)"]
+        lines += [f"  {line}" for line in report["progress"]]
     if report.get("last_error"):
         error = report["last_error"]
         lines += ["", f"last error  {error['kind']}: {error['message'][:160]}"]

@@ -374,6 +374,11 @@ class Dossier:
         return self.root / "log.jsonl"
 
     @property
+    def progress_path(self) -> Path:
+        """The run ticker: one line per step, written the moment it happens."""
+        return self.root / "progress.md"
+
+    @property
     def intake_dir(self) -> Path:
         return self.root / "00-intake"
 

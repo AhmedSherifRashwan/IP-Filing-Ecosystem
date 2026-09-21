@@ -125,6 +125,16 @@ The independent review runs two reviewers on different model families in
 parallel; findings both raise are marked consensus, and only consensus or
 critical findings drive loop-backs.
 
+## Progress
+
+The runner writes a ticker: one short line per step (`started`, `done 2m41s`,
+`retry 1 (head-truncated)`, `skipped, previous text stands`) to
+`dossiers/<slug>/progress.md` the moment it happens. Nothing can be posted into
+an OpenClaw session without spending a model turn, so those lines reach the
+chat in batches — about once a minute (`--notify-interval`), and immediately
+for a gate, a cap, a failure or a pause. `ipfe status` prints the last dozen
+lines under `recent`.
+
 ## Resilience
 
 An unattended run is built to finish. Large prompts take the gateway path
