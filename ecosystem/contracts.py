@@ -407,7 +407,7 @@ def reply_looks_defective(text: str, kind: str) -> str | None:
     transport defects to retry, not contract failures to correct.
     """
     body = (text or "").strip()
-    if len(body) < 50:
+    if len(body) < 20:
         return "empty"
     first = _FIRST_HEADING_BY_KIND.get(kind, "## Deliverable")
     if first is None or len(body) < 1500:

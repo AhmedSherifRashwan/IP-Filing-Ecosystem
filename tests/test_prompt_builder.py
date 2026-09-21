@@ -236,7 +236,7 @@ def test_allow_truncate_never_truncates_a_required_input(dossier: Dossier, tmp_p
 
 def test_transport_hint_switches_at_the_argv_limit(settings: Settings) -> None:
     assert transport_hint("x" * 1_000, settings) == "gateway-call"
-    assert transport_hint("x" * 500_000, settings) == "agent-cli"
+    assert transport_hint("x" * 700_000, settings) == "agent-cli"
 
 
 def test_prompt_written_to_disk_is_the_assembled_text(

@@ -487,8 +487,14 @@ class Caller:
                 retry=n,
                 reply_chars=len(reply.text),
             )
+            keep = (result.session_key, result.idempotency_key, result.prefer_gateway)
             self._fresh_session(result, f"fresh{n}")
-            reply = self._send(result, prompt_path, text, spec.timeout_s)
+            try:
+                reply = self._send(result, prompt_path, text, spec.timeout_s)
+            except Exception as exc:  # keep what we have; the contract ladder decides
+                log.warning("fresh retry %d of %s failed: %s", n, result.call_id, exc)
+                result.session_key, result.idempotency_key, result.prefer_gateway = keep
+                break
         return reply
 
     def _fallback(

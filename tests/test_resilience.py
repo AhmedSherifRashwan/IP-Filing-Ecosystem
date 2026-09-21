@@ -65,7 +65,11 @@ def test_truncated_reply_is_retried_in_a_fresh_session(
 def _always_bad(replays: Path, key: str) -> None:
     # Short and wrongly structured: fails the contract without looking truncated.
     for suffix in ("", ".turn2", "-rerun1", "-rerun1.turn2"):
-        _fixture(replays, key + suffix, "## Summary\n\nNot the contract.\n")
+        _fixture(
+            replays,
+            key + suffix,
+            "## Summary\n\n" + "Not the contract, and not truncated either. " * 4,
+        )
 
 
 def test_failed_revision_is_skipped_not_fatal(

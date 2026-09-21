@@ -25,9 +25,9 @@ def test_defaults_derive_from_repo_root(tmp_path: Path) -> None:
     assert settings.prompts_dir == tmp_path / "prompts"
     assert settings.dossier_root("acme") == tmp_path / "dossiers" / "acme"
     assert settings.max_prompt_chars == 600_000
-    assert settings.gateway_call_max_bytes == 400_000
+    assert settings.gateway_call_max_bytes == 600_000
     assert settings.agent_cli_max_bytes == 4_194_304
-    assert settings.inner_loop_cap == 3
+    assert settings.inner_loop_cap == 2
     assert settings.loopback_cap == 2
     assert settings.terminology_policy == "block"
     assert settings.openclaw_bin == "~/.openclaw/bin/openclaw"

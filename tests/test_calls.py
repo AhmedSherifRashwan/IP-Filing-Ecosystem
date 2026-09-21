@@ -183,14 +183,15 @@ def test_one_correction_turn_recovers_a_broken_reply(
 def test_a_second_failure_raises_and_keeps_both_replies(
     dossier: Dossier, state: MatterState, playbook: Playbook, settings: Settings, replays: Path
 ) -> None:
-    spec = _spec()
-    _fixture(replays, "demo-p3-t1-v1", "## Deliverable\n\nStill broken.")
+    # A critical prompt (the specification blueprint) has no fallback: it stops.
+    spec = _spec(id="16", phase="P4", agent="ip-spec")
+    _fixture(replays, "demo-p4-16-v1", "## Deliverable\n\nStill broken.")
 
     with pytest.raises(ContractFailed):
-        _caller(dossier, state, playbook, settings, replays).execute(spec, _version(dossier))
+        _caller(dossier, state, playbook, settings, replays).execute(spec, _version(dossier, "P4"))
 
-    assert (dossier.runs_dir / "demo-p3-t1-v1-a0" / "reply.md").is_file()
-    assert (dossier.runs_dir / "demo-p3-t1-v1-a1" / "reply.md").is_file()
+    assert (dossier.runs_dir / "demo-p4-16-v1-a0" / "reply.md").is_file()
+    assert (dossier.runs_dir / "demo-p4-16-v1-a1" / "reply.md").is_file()
     assert state.agent_runs[-1].status == "started"
 
 
