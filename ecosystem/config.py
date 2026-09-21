@@ -160,6 +160,13 @@ class Settings(BaseModel):
 
     inner_loop_cap: int = 2
     loopback_cap: int = 2
+    # Hard budget on the review->loop-back->review cycle. The playbook's review
+    # is written for a human reading it once: Prompt 32 alone asks for twenty
+    # objections, and two reviewers over twelve prompts can return hundreds. A
+    # loop that chases them all to zero never packages, so after this many
+    # review rounds everything still open is carried as residual and the
+    # package is built. Default 2: one review, one revision, one re-review.
+    max_review_rounds: int = 2
     formal_fix_cap: int = 2
     gate2_reconfirm_on_loopback: bool = True
 

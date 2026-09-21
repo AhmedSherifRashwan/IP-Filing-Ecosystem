@@ -188,6 +188,8 @@ class Finding(_Envelope):
     # independently. Defaults keep every envelope and every findings.json
     # written before the second reviewer existed valid.
     reviewers: list[str] = Field(default_factory=list)
+    # Every review prompt that raised this objection, after merging restatements.
+    sources: list[str] = Field(default_factory=list)
     consensus: bool = False
 
 

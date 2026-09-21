@@ -135,6 +135,21 @@ chat in batches — about once a minute (`--notify-interval`), and immediately
 for a gate, a cap, a failure or a pause. `ipfe status` prints the last dozen
 lines under `recent`.
 
+## The run always reaches a package
+
+The review is bounded, not chased to zero. Two reviewers over twelve prompts
+can return hundreds of findings (Prompt 32 alone asks for twenty objections),
+so after `max_review_rounds` (default 2: review, revise, re-review) whatever is
+still open becomes residual findings in the package and the package is built.
+Nothing is capped or discarded: every finding is reported. Restatements of one
+objection across prompts are merged into a single finding that lists every
+prompt that raised it, so the count reflects distinct problems.
+
+`ipfe stop --matter X` stops a background run and leaves the dossier intact.
+`ipfe deliver --matter X` builds the package now from the latest artefacts,
+converged or not, and discloses what was skipped. `ipfe status` reports
+`stalled` rather than `running` when no process is alive.
+
 ## Resilience
 
 An unattended run is built to finish. Large prompts take the gateway path

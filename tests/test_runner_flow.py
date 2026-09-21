@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from ecosystem.config import Settings
+from ecosystem.contracts import Finding
 from ecosystem.dossier import Dossier, split_frontmatter
 from ecosystem.gates import Gates
 from ecosystem.log import EventLog
@@ -706,3 +707,68 @@ def test_disabling_the_second_reviewer_restores_the_old_single_reviewer_run(
     assert not (review.path / "32b.envelope.json").exists()
     findings = json.loads((review.path / "findings.json").read_text(encoding="utf-8"))
     assert findings["findings"][0]["reviewers"] == ["ip-reviewer"]
+
+
+# ---------------------------------------------------------------------------
+# the run always reaches a package
+# ---------------------------------------------------------------------------
+
+
+def test_a_review_that_never_goes_clean_still_packages(
+    matter: Dossier, playbook, settings: Settings, tmp_path: Path, scenario: Scenario
+) -> None:
+    """The budget, not convergence, is what ends the review.
+
+    Two reviewers over twelve prompts can return hundreds of findings; a loop
+    that chases them to zero never delivers. After `max_review_rounds` the open
+    findings become residual and the package is built anyway.
+    """
+    from tests.replay_builder import materialise
+
+    for round_no in (1, 2, 3):
+        scenario = scenario.at(
+            fixture_key("demo", "REVIEW", "32", round_no), findings=[novelty_finding(n=round_no)]
+        )
+    replays = tmp_path / "never-clean"
+    materialise(playbook, replays, scenario)
+    save_state(new_state("demo", "Valve", ["US"]), matter.state_path)
+    harness = Harness(matter, playbook, settings, replays)
+
+    _to_review(harness)
+    harness.decide("2", "accept")
+    reason = harness.run()
+
+    state = harness.state
+    assert len(state.review.versions) == 2  # one review, one re-review, then stop
+    assert state.review.versions[-1].open_categories  # still open, deliberately
+    assert state.phase("PACKAGE").status == "complete"
+    assert state.gates["3"].status == "pending"
+    assert reason is StopReason.GATE
+    package = next((matter.root / "07-package").glob("v*/MANIFEST.json"))
+    assert "residual-findings.md" in package.read_text()
+
+
+def test_one_objection_restated_by_several_prompts_is_one_finding(settings: Settings) -> None:
+    """Nothing is capped or dropped; restatements of the same defect are merged."""
+    from ecosystem.loopback import _merge_within
+
+    base = novelty_finding(n=1)
+    restatements = [
+        Finding.model_validate({**base, "source_prompt": prompt, "id": f"F-{prompt}-1"})
+        for prompt in ("28", "32", "36")
+    ]
+    distinct = Finding.model_validate(
+        {
+            **base,
+            "source_prompt": "33",
+            "id": "F-33-1",
+            "title": "Claim 9 is undetectable in use",
+            "claim_refs": ["9"],
+            "severity": "high",
+        }
+    )
+    merged = _merge_within([*restatements, distinct])
+
+    assert len(merged) == 2
+    assert merged[0].sources == ["28", "32", "36"]
+    assert merged[0].severity == "critical"

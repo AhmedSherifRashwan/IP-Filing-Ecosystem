@@ -21,6 +21,7 @@ import argparse
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -174,6 +175,17 @@ def build_parser() -> argparse.ArgumentParser:
     intake.add_argument("--stdin", action="store_true", help="read the content from stdin")
     intake.add_argument("--force", action="store_true", help="overwrite an existing file")
 
+    stop = sub.add_parser("stop", help="stop a running matter (the dossier is kept)")
+    stop.add_argument("--matter", required=True)
+
+    deliver = sub.add_parser(
+        "deliver", help="build the package now from the latest artefacts, converged or not"
+    )
+    deliver.add_argument("--matter", required=True)
+    deliver.add_argument("--transport", choices=["auto", "gateway-call", "agent-cli", "fake"])
+    deliver.add_argument("--fixtures", help="replay directory for --transport fake")
+    deliver.add_argument("--notify", metavar="SESSION_KEY", help="push progress into this session")
+
     status = sub.add_parser("status", help="where the matter is and what it needs")
     status.add_argument("--matter", required=True)
     status.add_argument("--json", dest="as_json", action="store_true")
@@ -260,6 +272,8 @@ def main(argv: list[str] | None = None) -> int:
         "status": cmd_status,
         "record-decision": cmd_record_decision,
         "intake": cmd_intake,
+        "stop": cmd_stop,
+        "deliver": cmd_deliver,
         "prompt": cmd_prompt,
         "show": cmd_show,
         "package": cmd_package,
@@ -572,6 +586,69 @@ def cmd_intake(args: argparse.Namespace) -> int:
     events.emit("intake_written", kind=args.kind, path=str(target.relative_to(dossier.root)))
     print(f"wrote {target} ({len(content):,} chars)")
     return EXIT["ok"]
+
+
+def _run_pid(dossier: Dossier) -> int | None:
+    """The pid of the background run, if one is recorded and still alive."""
+    path = dossier.root / "run.pid"
+    try:
+        pid = int(path.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    try:
+        os.kill(pid, 0)
+    except (OSError, ProcessLookupError):
+        return None
+    return pid
+
+
+def cmd_stop(args: argparse.Namespace) -> int:
+    """Stop a background run. The dossier is untouched; the matter resumes later."""
+    settings = _settings(args)
+    dossier, state, events = _open(settings, args.matter)
+    pid = _run_pid(dossier)
+    if pid is not None:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError as exc:
+            return _fail(EXIT["unexpected"], f"could not stop pid {pid}: {exc}")
+        print(f"stopped the run for {args.matter} (pid {pid})")
+    else:
+        print(f"no live run for {args.matter}")
+    (dossier.root / "run.pid").unlink(missing_ok=True)
+    # A killed process cannot correct its own state, so say plainly that the
+    # matter is idle: nothing is executing, and `run` will resume the cursor.
+    if state.status in {"running"}:
+        state.status = "idle"
+        state_module.save(state, dossier.state_path)
+    events.emit("run_stopped_by_user", reason="stop", status=state.status)
+    print(f"status is now {state.status}; resume with `uv run ipfe run --matter {args.matter}`")
+    return EXIT["ok"]
+
+
+def cmd_deliver(args: argparse.Namespace) -> int:
+    """Build the package now, from the latest artefacts, converged or not."""
+    settings = _settings(args)
+    dossier, state, events = _open(settings, args.matter)
+    if _run_pid(dossier) is not None:
+        return _fail(
+            EXIT["lock"],
+            f"a run is still going for {args.matter}; stop it first with "
+            f"`uv run ipfe stop --matter {args.matter}`",
+        )
+    playbook = load_playbook(settings.prompts_path)
+    notifier = _attach_notifier(args, dossier, state, events, settings)
+    transport = _transport(args, settings)
+    try:
+        with Lock(dossier.root):
+            state = state_module.load(dossier.state_path)
+            runner = Runner(dossier, state, playbook, transport, settings, events)
+            reason = runner.deliver()
+    finally:
+        if notifier is not None:
+            notifier.close()
+    _print_stop(reason, dossier, state, settings)
+    return _STOP_EXIT[reason]
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -979,6 +1056,10 @@ def _status_report(dossier: Dossier, state: MatterState, settings: Settings) -> 
     if pending:
         report["awaiting_decision"] = _awaiting(dossier, state, pending[0])
     report["progress"] = _progress_tail(dossier, 12)
+    if report["status"] == "running" and _run_pid(dossier) is None:
+        # Nothing is executing: the process was killed or died without getting
+        # to write its own state. Saying "running" would be a lie.
+        report["status"] = "stalled (no live process; `run` resumes it)"
     return report
 
 

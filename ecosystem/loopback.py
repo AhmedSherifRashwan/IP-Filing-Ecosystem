@@ -169,13 +169,64 @@ def _findings_by_reviewer(directory: Path) -> dict[str, list[Finding]]:
                 continue
             finding.reviewers = [reviewer]
             finding.consensus = False
+            finding.sources = [finding.source_prompt]
             key = (
                 finding.category,
                 tuple(sorted(str(ref) for ref in finding.claim_refs)),
                 finding.title.strip().lower(),
             )
             bucket.setdefault(key, finding)
-    return {reviewer: list(bucket.values()) for reviewer, bucket in seen.items()}
+    return {reviewer: _merge_within(list(bucket.values())) for reviewer, bucket in seen.items()}
+
+
+def _merge_within(findings: list[Finding]) -> list[Finding]:
+    """Collapse one reviewer's restatements of the same objection.
+
+    Twelve review prompts examine one package from twelve angles, so the same
+    defect comes back from the support matrix, the examiner red-team and the
+    gap analysis in three different sentences. Left alone that reads as three
+    findings and sends three copies to the drafter. Merging uses the same test
+    as the cross-reviewer pass -- same category, an overlapping claim or
+    paragraph reference, a recognisably similar title -- and nothing is
+    dropped: the survivor keeps the worst severity, every source prompt in
+    `sources`, and the longest statement of the attack and the proposed action.
+    """
+    merged: list[Finding] = []
+    for finding in findings:
+        if not finding.sources:
+            finding.sources = [finding.source_prompt]
+        for kept in merged:
+            # Only restatements across prompts merge. Two findings in one
+            # reply are two findings: the reviewer listed them separately and
+            # meant them separately.
+            if finding.source_prompt in kept.sources:
+                continue
+            if not _same_objection(kept, finding):
+                continue
+            kept.severity = _worse(kept.severity, finding.severity)
+            kept.sources = _union(kept.sources, finding.sources)
+            kept.claim_refs = _union(kept.claim_refs, finding.claim_refs)
+            kept.spec_refs = _union(kept.spec_refs, finding.spec_refs)
+            if len(finding.attack) > len(kept.attack):
+                kept.attack = finding.attack
+            if len(finding.least_narrowing_action) > len(kept.least_narrowing_action):
+                kept.least_narrowing_action = finding.least_narrowing_action
+            kept.requires_new_disclosure = (
+                kept.requires_new_disclosure or finding.requires_new_disclosure
+            )
+            break
+        else:
+            merged.append(finding)
+    return merged
+
+
+def _union(left: list[str], right: list[str]) -> list[str]:
+    """Order-preserving union: merging must never reorder or lose a reference."""
+    out = list(left)
+    for item in right:
+        if item not in out:
+            out.append(item)
+    return out
 
 
 def _merge_reviewers(by_reviewer: dict[str, list[Finding]]) -> list[Finding]:
@@ -204,6 +255,7 @@ def _merge_reviewers(by_reviewer: dict[str, list[Finding]]) -> list[Finding]:
         partner = second[best]
         finding.reviewers = [*finding.reviewers, *partner.reviewers]
         finding.consensus = True
+        finding.sources = _union(finding.sources, partner.sources)
         # The more alarming reading wins. Two models disagreeing about how bad
         # something is are still agreeing that it is there.
         finding.severity = _worse(finding.severity, partner.severity)

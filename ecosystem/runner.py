@@ -787,6 +787,26 @@ class Runner:
             self._record_review(version, findings)
 
             plan = self._plan(findings)
+            rounds = len(self.state.review.versions)
+            budget = int(getattr(self.settings, "max_review_rounds", 2))
+            if not plan.clean and rounds >= budget:
+                # The budget exists so a run always reaches a package. What is
+                # still open is not lost: it is carried into the package's
+                # residual findings, which is where counsel reads it anyway.
+                self.events.emit(
+                    "review_budget_spent",
+                    phase="REVIEW",
+                    rounds=rounds,
+                    budget=budget,
+                    counts=loopback.counts(findings),
+                    open_categories=loopback.open_categories(findings),
+                )
+                log.warning(
+                    "review budget spent after %d round(s); packaging with %s open findings",
+                    rounds,
+                    loopback.counts(findings),
+                )
+                return None
             if plan.clean:
                 self.events.emit(
                     "loopback_routed",
@@ -1180,6 +1200,38 @@ class Runner:
         return None
 
     # -- packaging ----------------------------------------------------------
+
+    def deliver(self) -> StopReason:
+        """Build the package now, from the latest artefacts, converged or not.
+
+        For a human who wants the report rather than another cycle. Whatever is
+        unreviewed or still open is disclosed in the package: the residual
+        findings list, the gate decisions file and the reviewer's own counts
+        say what was skipped. Gate 3 still belongs to counsel.
+        """
+        self.state.status = "running"
+        self._save()
+        self.events.emit("run_started", until="package", from_phase="deliver", cursor={})
+        try:
+            self._close_running("REVIEW")
+            if self._newest_review() is None:
+                raise RuntimeError("cannot deliver: no review has run yet")
+            self.state.phase("PACKAGE").status = "idle"
+            self._force_from = "package"
+            reason = self._package_stage() or StopReason.DONE
+            if reason is StopReason.DONE:
+                reason = self._gate_stage("3") or StopReason.DONE
+        except Exception as exc:
+            self.state.status = "failed"
+            self.state.last_error = _last_error(exc, self.state)
+            self._save()
+            self.events.emit("run_failed", error=f"{type(exc).__name__}: {exc}", phase="PACKAGE")
+            raise
+        if self.state.status == "running":
+            self.state.status = "idle"
+        self._save()
+        self.events.emit("run_stopped", reason=reason.value, status=self.state.status)
+        return reason
 
     def _package_stage(self) -> StopReason | None:
         package_state = self.state.phase("PACKAGE")
