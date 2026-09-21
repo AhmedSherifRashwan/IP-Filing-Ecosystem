@@ -424,8 +424,11 @@ class AutoTransport:
         if req.model:
             # The gateway RPC answers "provider/model overrides are not
             # authorized for this caller"; the CLI path is the one that works.
-            if size > self.agent_cli_max:
-                raise PromptTooLarge(size, self.agent_cli_max)
+            if size > self.settings.agent_cli_max_bytes:
+                raise PromptTooLarge(
+                    f"prompt for {req.agent_id} serialises to {size} bytes, over the "
+                    f"{self.settings.agent_cli_max_bytes} byte agent-cli limit"
+                )
             return self.agent_cli
         if size > self.settings.agent_cli_max_bytes:
             raise PromptTooLarge(

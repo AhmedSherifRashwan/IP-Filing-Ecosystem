@@ -221,6 +221,7 @@ class CallResult:
     run_id: str | None = None
     provider: str | None = None
     model: str | None = None
+    requested_model: str | None = None
     duration_ms: int = 0
     attempts: int = 1
     contract_corrected: bool = False
