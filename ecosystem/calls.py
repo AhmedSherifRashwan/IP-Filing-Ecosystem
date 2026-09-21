@@ -689,11 +689,36 @@ class Caller:
 
     # -- contract correction ------------------------------------------------
 
+    # The reply section each write-back projects onto a dossier file. A reply
+    # that parses but lacks it is unusable for the pipeline and goes through
+    # the same correction ladder as a reply that does not parse at all.
+    WRITEBACK_SECTIONS: dict[str, str] = {
+        "20a": "Reference-Numeral Registry",
+        "25": "Final Claim Set",
+        "x-p5-revise": "Final Claim Set",
+        "x-p4-compose-description": "Description",
+        "x-p4-revise": "Description",
+        "x-formal-fix": "Corrected Text",
+    }
+
+    def _parse_checked(self, text: str, spec: PromptSpec) -> ParsedReply:
+        parsed = parse_reply(text, spec.kind)
+        wanted = self.WRITEBACK_SECTIONS.get(spec.id)
+        if wanted:
+            deliverable = parsed.sections.get("Deliverable", "")
+            pattern = rf"^#{{2,4}}\s*{re.escape(wanted)}\s*:?\s*$"
+            if not re.search(pattern, deliverable, re.IGNORECASE | re.MULTILINE):
+                raise ContractError(
+                    f"the `### {wanted}` section is missing from the Deliverable",
+                    missing=[f"### {wanted}"],
+                )
+        return parsed
+
     def _parse_with_correction(
         self, result: CallResult, spec: PromptSpec, reply: GatewayReply, attempt: int
     ) -> tuple[ParsedReply, int]:
         try:
-            return parse_reply(reply.text, spec.kind), attempt
+            return self._parse_checked(reply.text, spec), attempt
         except ContractError as first:
             log.warning("contract failure on %s: %s", result.call_id, first.message)
             self.events.emit(
@@ -706,24 +731,33 @@ class Caller:
             )
             self.state.bump("contract_corrections")
             attempt += 1
-            retry = self._correction_turn(
-                result,
-                spec,
-                attempt,
-                self._contract_correction_text(
-                    spec, first, result.assembled.text, result.reply_text or ""
-                ),
-            )
+            try:
+                retry = self._correction_turn(
+                    result,
+                    spec,
+                    attempt,
+                    self._contract_correction_text(
+                        spec, first, result.assembled.text, result.reply_text or ""
+                    ),
+                )
+            except Exception as exc:  # a failed correction call is a failed correction
+                log.warning("correction turn for %s failed: %s", result.call_id, exc)
+                fresh = self._fresh_rerun(result, spec, attempt)
+                if fresh is not None:
+                    return fresh, attempt + 1
+                raise ContractFailed(result.call_id, first.message) from exc
             result.reply_text = retry.text
             result.contract_corrected = True
             try:
-                return parse_reply(retry.text, spec.kind), attempt
+                return self._parse_checked(retry.text, spec), attempt
             except ContractError as second:
                 fresh = self._fresh_rerun(result, spec, attempt)
                 if fresh is not None:
                     return fresh, attempt + 1
                 self.events.emit(
                     "contract_failed",
+                    critical=spec.id
+                    in getattr(self.settings, "critical_prompts", CRITICAL_PROMPTS),
                     phase=spec.phase,
                     prompt=spec.id,
                     call_id=result.call_id,
@@ -744,7 +778,7 @@ class Caller:
             return None
         reply = self._retry_defective(result, spec, prompt_path, result.assembled.text, reply)
         try:
-            parsed = parse_reply(reply.text, spec.kind)
+            parsed = self._parse_checked(reply.text, spec)
         except ContractError as exc:
             log.warning("fresh re-run of %s still off-contract: %s", result.call_id, exc.message)
             return None
@@ -1023,6 +1057,10 @@ class Caller:
             "status": "candidate",
             "inputs": result.assembled.input_refs(self.dossier.root),
         }
+        if result.parsed.warnings:
+            # What the parser repaired: a record for the evidence pack that the
+            # reply was read tolerantly, not a defect of the content.
+            frontmatter["contract_warnings"] = list(result.parsed.warnings)
         title_slug = ctx.title_slug or slugify(spec.title)
         result.output_path = self.dossier.write_output(
             result.phase,

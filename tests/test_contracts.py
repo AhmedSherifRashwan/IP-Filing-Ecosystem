@@ -126,37 +126,36 @@ def test_the_last_json_block_wins() -> None:
     assert "EXAMPLE" in parsed.body_md
 
 
-def test_missing_sections_raise_a_correctable_contract_error() -> None:
+def test_missing_sections_are_tolerated_and_recorded() -> None:
     reply = '## Deliverable\n\nbody\n\n```json\n{"prompt": "11", "status": "complete"}\n```\n'
-
-    with pytest.raises(ContractError) as excinfo:
-        parse_reply(reply, "drafting")
-
-    error = excinfo.value
-    assert error.missing == ["## Rationale", "## Assumptions", "## Open Questions"]
-    assert "`## Rationale` section is missing" in error.message
-    assert "`## Open Questions` section is missing" in error.message
+    parsed = parse_reply(reply, "drafting")
+    assert parsed.sections["Deliverable"] == "body"
+    assert sorted(w.split("`")[1] for w in parsed.warnings if w.startswith("`")) == [
+        "## Assumptions",
+        "## Open Questions",
+        "## Rationale",
+    ]
+    error = ContractError("x", missing=["## Rationale"])
     assert "Resend the COMPLETE reply" in error.correction_text()
-    assert error.message in error.correction_text()
 
 
-def test_missing_envelope_and_invalid_envelope_are_distinct_errors() -> None:
-    with pytest.raises(ContractError) as missing:
-        parse_reply("## Findings\n\nnothing to report\n", "review")
-    assert "json envelope" in missing.value.missing
+def test_missing_envelope_is_synthesised_and_bad_status_repaired() -> None:
+    parsed = parse_reply("## Findings\n\nnothing to report\n", "review")
+    assert parsed.envelope is not None
+    assert any("synthesised" in w for w in parsed.warnings)
 
     bad = '## Findings\n\nx\n\n```json\n{"prompt": "32", "status": "nope"}\n```\n'
-    with pytest.raises(ContractError) as invalid:
-        parse_reply(bad, "review")
-    assert "valid envelope" in invalid.value.missing
-    assert "status" in invalid.value.message
+    parsed = parse_reply(bad, "review")
+    assert parsed.envelope is not None and parsed.envelope.status == "partial"
+    assert any("status" in w for w in parsed.warnings)
 
 
-def test_bad_finding_category_is_rejected() -> None:
+def test_unknown_finding_category_is_mapped_with_a_warning() -> None:
     reply = REVIEW_REPLY.replace('"category": "novelty"', '"category": "style"')
-    with pytest.raises(ContractError) as excinfo:
-        parse_reply(reply, "review")
-    assert "category" in excinfo.value.message
+    parsed = parse_reply(reply, "review")
+    assert parsed.envelope is not None
+    assert parsed.envelope.findings[0].category == "formal"
+    assert any("category" in w for w in parsed.warnings)
 
 
 def test_prose_kind_needs_no_envelope_or_sections() -> None:

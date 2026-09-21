@@ -160,12 +160,13 @@ def test_prompt_is_on_disk_before_the_call(
 def test_one_correction_turn_recovers_a_broken_reply(
     dossier: Dossier, state: MatterState, playbook: Playbook, settings: Settings, replays: Path
 ) -> None:
-    spec = _spec()
-    _fixture(replays, "demo-p3-t1-v1.turn1", "## Deliverable\n\nNo envelope, no sections.")
-    _fixture(replays, "demo-p3-t1-v1.turn2", drafting_reply("t1", ["Section"]))
+    # A claims reply without its `### Final Claim Set` is unusable; one correction fixes it.
+    spec = _spec(id="25", phase="P5", agent="ip-claims")
+    _fixture(replays, "demo-p5-25-v1.turn1", drafting_reply("25", ["Audit"]))
+    _fixture(replays, "demo-p5-25-v1.turn2", drafting_reply("25", ["Audit", "Final Claim Set"]))
 
     caller = _caller(dossier, state, playbook, settings, replays)
-    result = caller.execute(spec, _version(dossier))
+    result = caller.execute(spec, _version(dossier, "P5"))
 
     assert result.contract_corrected is True
     assert result.attempts == 2
@@ -174,24 +175,24 @@ def test_one_correction_turn_recovers_a_broken_reply(
     calls = caller.transport.calls  # type: ignore[attr-defined]
     assert calls[0].session_key == calls[1].session_key
     assert calls[0].idempotency_key != calls[1].idempotency_key
-    correction = (dossier.runs_dir / "demo-p3-t1-v1-a1" / "prompt.md").read_text(encoding="utf-8")
+    correction = (dossier.runs_dir / "demo-p5-25-v1-a1" / "prompt.md").read_text(encoding="utf-8")
     assert "Return the complete corrected reply, not a diff." in correction
     assert "## Output contract" in correction
-    assert "`## Rationale` section is missing" in correction
+    assert "`### Final Claim Set` section is missing" in correction
 
 
 def test_a_second_failure_raises_and_keeps_both_replies(
     dossier: Dossier, state: MatterState, playbook: Playbook, settings: Settings, replays: Path
 ) -> None:
-    # A critical prompt (the specification blueprint) has no fallback: it stops.
-    spec = _spec(id="16", phase="P4", agent="ip-spec")
-    _fixture(replays, "demo-p4-16-v1", "## Deliverable\n\nStill broken.")
+    # The final claim set is critical: a reply without `### Final Claim Set`,
+    # a failed correction and a failed fresh re-run leave nothing to fall back on.
+    spec = _spec(id="25", phase="P5", agent="ip-claims")
+    _fixture(replays, "demo-p5-25-v1", drafting_reply("25", ["Audit"]))
 
     with pytest.raises(ContractFailed):
-        _caller(dossier, state, playbook, settings, replays).execute(spec, _version(dossier, "P4"))
+        _caller(dossier, state, playbook, settings, replays).execute(spec, _version(dossier, "P5"))
 
-    assert (dossier.runs_dir / "demo-p4-16-v1-a0" / "reply.md").is_file()
-    assert (dossier.runs_dir / "demo-p4-16-v1-a1" / "reply.md").is_file()
+    assert (dossier.runs_dir / "demo-p5-25-v1-a0" / "reply.md").is_file()
     assert state.agent_runs[-1].status == "started"
 
 
@@ -364,7 +365,7 @@ def test_20a_writes_the_numeral_registry(
     }
 
 
-def test_an_unparseable_registry_is_a_contract_failure(
+def test_an_unparseable_registry_is_kept_as_partial(
     dossier: Dossier, state: MatterState, playbook: Playbook, settings: Settings, replays: Path
 ) -> None:
     spec = _spec(id="20a", phase="P4", agent="ip-spec", deliverable_sections=["Registry"])
@@ -373,8 +374,11 @@ def test_an_unparseable_registry_is_a_contract_failure(
         "demo-p4-20a-v1",
         drafting_reply("20a", ["Registry"], section_text={"Registry": "No table here."}),
     )
-    with pytest.raises(ContractFailed, match="20a"):
-        _caller(dossier, state, playbook, settings, replays).execute(spec, _version(dossier, "P4"))
+    result = _caller(dossier, state, playbook, settings, replays).execute(
+        spec, _version(dossier, "P4")
+    )
+    assert result.partial is True
+    assert not (dossier.numerals_dir / "registry.json").exists()
 
 
 def test_final_claim_set_becomes_claims_md(

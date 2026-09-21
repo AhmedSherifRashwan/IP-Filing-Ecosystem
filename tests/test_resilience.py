@@ -62,14 +62,10 @@ def test_truncated_reply_is_retried_in_a_fresh_session(
     assert transport.calls[-1].session_key.endswith("-fresh1")
 
 
-def _always_bad(replays: Path, key: str) -> None:
-    # Short and wrongly structured: fails the contract without looking truncated.
-    for suffix in ("", ".turn2", "-rerun1", "-rerun1.turn2"):
-        _fixture(
-            replays,
-            key + suffix,
-            "## Summary\n\n" + "Not the contract, and not truncated either. " * 4,
-        )
+def _always_bad(replays: Path, key: str, text: str = "") -> None:
+    # Only the first reply exists; every later attempt hits a missing fixture,
+    # which the ladder treats as a failed attempt.
+    _fixture(replays, key, text)
 
 
 def test_failed_revision_is_skipped_not_fatal(
@@ -77,7 +73,8 @@ def test_failed_revision_is_skipped_not_fatal(
 ) -> None:
     _lock(dossier)
     spec = _spec(id="x-p4-revise", phase="P4", agent="ip-spec", kind="revise")
-    _always_bad(replays, "demo-p4-x-p4-revise-v1")
+    # Parses, but has no `### Description` to write back: unusable as a revision.
+    _always_bad(replays, "demo-p4-x-p4-revise-v1", drafting_reply("x-p4-revise", ["Change Log"]))
     transport = FakeTransport(fixtures_dir=replays)
     result = Caller(
         dossier, state, playbook, transport, settings, EventLog(dossier.log_path, "demo")
@@ -91,12 +88,13 @@ def test_failed_noncritical_prompt_keeps_a_partial_output(
     dossier: Dossier, state: MatterState, playbook: Playbook, settings: Settings, replays: Path
 ) -> None:
     _lock(dossier)
-    spec = _spec(id="13", phase="P3", agent="ip-embodiment")
-    _always_bad(replays, "demo-p3-13-v1")
+    # 20a must write the numeral registry; a reply without it is unusable but not fatal.
+    spec = _spec(id="20a", phase="P4", agent="ip-spec")
+    _always_bad(replays, "demo-p4-20a-v1", drafting_reply("20a", ["Figure Instructions"]))
     transport = FakeTransport(fixtures_dir=replays)
     result = Caller(
         dossier, state, playbook, transport, settings, EventLog(dossier.log_path, "demo")
-    ).execute(spec, _version(dossier))
+    ).execute(spec, _version(dossier, "P4"))
     assert result.partial is True and result.output_path is not None
     assert "status: partial" in result.output_path.read_text()
 
@@ -105,8 +103,8 @@ def test_failed_critical_prompt_still_stops(
     dossier: Dossier, state: MatterState, playbook: Playbook, settings: Settings, replays: Path
 ) -> None:
     _lock(dossier)
-    spec = _spec(id="16", phase="P4", agent="ip-spec")
-    _always_bad(replays, "demo-p4-16-v1")
+    spec = _spec(id="25", phase="P5", agent="ip-claims")
+    _always_bad(replays, "demo-p5-25-v1", drafting_reply("25", ["Audit"]))
     transport = FakeTransport(fixtures_dir=replays)
     with pytest.raises(ContractFailed):
         Caller(

@@ -165,9 +165,16 @@ def format_event(
     if event == "call_failed":
         return f"{head}: {_phase_label(phase)} — {prompt_label} FAILED: {detail.get('error')}"
     if event == "contract_failed":
+        if detail.get("critical"):
+            return (
+                f"{head}: {_phase_label(phase)} — {prompt_label} returned a reply that did not "
+                f"follow the output contract after a correction and a fresh attempt. This prompt "
+                f"is load-bearing, so the run stops here."
+            )
         return (
-            f"{head}: {_phase_label(phase)} — {prompt_label} returned a reply that did not "
-            f"follow the output contract even after a correction turn. The run stops here."
+            f"{head}: {_phase_label(phase)} — {prompt_label} did not follow the output contract "
+            f"after a correction and a fresh attempt; the runner is keeping what it can and "
+            f"continuing (details follow)."
         )
     if event == "terminology_violation":
         return (
