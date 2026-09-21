@@ -7,7 +7,7 @@ kind: drafting
 inputs: [findings:novelty, findings:design-around, out:P3/11, out:P3/12, confirmed_embodiments, terminology, out:P4/description]
 optional_inputs: [out:P3/13, out:P3/14, out:P3/15, out:P5/claims, out:P2/09]
 deliverable_sections: ["Additional Embodiments", "Design-Around Responses"]
-timeout_s: 1800
+timeout_s: 3600
 include_rationale: false
 ---
 

@@ -7,7 +7,7 @@ kind: revise
 inputs: [out:P5/claims, out:P4/description, registry, terminology]
 optional_inputs: [findings:all, corrections, disclosure_requests, open_disagreements]
 deliverable_sections: ["Final Claim Set", "Change Log"]
-timeout_s: 1800
+timeout_s: 3600
 include_rationale: false
 ---
 

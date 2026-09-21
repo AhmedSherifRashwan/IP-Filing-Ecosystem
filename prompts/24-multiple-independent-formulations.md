@@ -7,7 +7,7 @@ kind: drafting
 inputs: [out:P4/description, registry, out:P4/19, out:P2/09, out:P1/02, terminology, out:P5/22]
 optional_inputs: [out:P5/23, out:P2/08]
 deliverable_sections: ["Three Formulations", "Comparison"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

@@ -7,7 +7,7 @@ kind: drafting
 inputs: [confirmed_embodiments, out:P1/01, out:P1/03, terminology, out:P4/16, out:P4/17]
 optional_inputs: [intake:data/*, intake:drawings, out:P2/09]
 deliverable_sections: ["Worked Examples"]
-timeout_s: 1800
+timeout_s: 3600
 include_rationale: false
 ---
 

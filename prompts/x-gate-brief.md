@@ -7,7 +7,7 @@ kind: prose
 inputs: []
 optional_inputs: [out:P1/01, out:P1/03, out:P1/04, out:P1/05, out:P3/11, out:P3/12, out:P3/13, out:P3/14, out:P3/15, findings:all, inner_loop_flags, open_disagreements, disclosure_requests, package:all, out:P1/02]
 deliverable_sections: []
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: true
 ---
 

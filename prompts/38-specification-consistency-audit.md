@@ -7,7 +7,7 @@ kind: review
 inputs: [package:description, package:figures, package:registry, terminology, numeral_crosscheck]
 optional_inputs: [package:claims]
 deliverable_sections: ["Consistency Audit"]
-timeout_s: 1800
+timeout_s: 3600
 include_rationale: false
 ---
 

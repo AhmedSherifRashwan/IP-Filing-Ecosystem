@@ -7,7 +7,7 @@ kind: analysis
 inputs: [out:P1/01, out:P1/03, out:P1/04, terminology, intake:gate-1-answers]
 optional_inputs: [intake:prior-art/*, out:P1/02]
 deliverable_sections: ["Search Concept Decomposition"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

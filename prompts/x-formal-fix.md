@@ -7,7 +7,7 @@ kind: revise
 inputs: [corrections, package:claims, package:description]
 optional_inputs: [registry, terminology]
 deliverable_sections: ["Corrected Text", "Change Log"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

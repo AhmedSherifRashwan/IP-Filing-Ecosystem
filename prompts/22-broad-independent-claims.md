@@ -7,7 +7,7 @@ kind: drafting
 inputs: [out:P4/description, registry, out:P4/19, out:P2/09, out:P1/02, terminology, out:P5/21]
 optional_inputs: [out:P2/07, out:P2/08]
 deliverable_sections: ["Independent Claims", "Limitation Table"]
-timeout_s: 1800
+timeout_s: 3600
 include_rationale: false
 ---
 

@@ -7,7 +7,7 @@ kind: analysis
 inputs: [intake:disclosure, out:P1/01, out:P1/03]
 optional_inputs: [out:P1/02]
 deliverable_sections: ["Terminology Table"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

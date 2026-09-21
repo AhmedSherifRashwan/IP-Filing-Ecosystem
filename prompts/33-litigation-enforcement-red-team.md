@@ -7,7 +7,7 @@ kind: review
 inputs: [package:all]
 optional_inputs: []
 deliverable_sections: ["Enforcement Analysis"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

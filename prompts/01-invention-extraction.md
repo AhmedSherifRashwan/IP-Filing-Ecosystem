@@ -7,7 +7,7 @@ kind: analysis
 inputs: [intake:disclosure]
 optional_inputs: [intake:data/*, intake:drawings]
 deliverable_sections: ["Structured Invention Disclosure"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

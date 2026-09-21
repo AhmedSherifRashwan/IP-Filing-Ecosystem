@@ -7,7 +7,7 @@ kind: revise
 inputs: [out:P4/description, registry, terminology, disclosure_requests, confirmed_embodiments]
 optional_inputs: [findings:all, corrections, open_disagreements, out:P4/17]
 deliverable_sections: ["Description", "Change Log"]
-timeout_s: 2400
+timeout_s: 5400
 include_rationale: false
 ---
 

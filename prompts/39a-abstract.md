@@ -7,7 +7,7 @@ kind: compose
 inputs: [package:description, package:claims]
 optional_inputs: []
 deliverable_sections: ["Abstract"]
-timeout_s: 900
+timeout_s: 1800
 include_rationale: false
 ---
 

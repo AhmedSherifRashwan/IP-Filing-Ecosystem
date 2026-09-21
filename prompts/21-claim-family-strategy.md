@@ -7,7 +7,7 @@ kind: drafting
 inputs: [out:P4/description, registry, out:P4/19, out:P2/09, out:P1/02, terminology]
 optional_inputs: [out:P2/07, out:P1/03, out:P4/16]
 deliverable_sections: ["Claim-Family Architecture"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

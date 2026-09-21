@@ -7,7 +7,7 @@ kind: analysis
 inputs: [out:P1/01, out:P1/03, out:P2/06, intake:prior-art/*]
 optional_inputs: [terminology]
 deliverable_sections: ["Candidate Triage", "Shortlist"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

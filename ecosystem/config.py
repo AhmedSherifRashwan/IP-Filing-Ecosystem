@@ -124,13 +124,18 @@ class Settings(BaseModel):
     # not something to silently truncate.
     max_prompt_chars: int = 600_000
     max_input_chars: int = 250_000
+    # Digest cap: an embedded phase output longer than this is cut, with a visible
+    # marker, before the prompt is sized. Keeps a call short enough for the CLI
+    # runtime's no-output watchdog. Disclosure, terminology, the description and
+    # the claims are never cut.
+    max_embed_chars: int = 120_000
 
     # Transport selection. `gateway call` carries params in argv (macOS ARG_MAX
     # is 1 MiB); `agent --message-file` is documented at 4 MiB.
     gateway_call_max_bytes: int = 400_000
     agent_cli_max_bytes: int = 4_194_304
 
-    default_timeout_s: int = 1200
+    default_timeout_s: int = 2400
 
     inner_loop_cap: int = 3
     loopback_cap: int = 2

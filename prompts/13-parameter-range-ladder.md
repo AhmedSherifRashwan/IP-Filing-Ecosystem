@@ -7,7 +7,7 @@ kind: drafting
 inputs: [out:P1/01, out:P1/03, out:P2/09, out:P2/10, terminology, intake:gate-1-answers]
 optional_inputs: [intake:data/*, intake:disclosure]
 deliverable_sections: ["Parameter Ladders"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

@@ -7,7 +7,7 @@ kind: analysis
 inputs: [intake:disclosure, out:P1/01, out:P1/03, out:P2/09, terminology, intake:gate-1-answers]
 optional_inputs: [intake:prior-art/*, out:P2/08, out:P1/02]
 deliverable_sections: ["White-Space Opportunities"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

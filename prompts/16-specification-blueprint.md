@@ -7,7 +7,7 @@ kind: drafting
 inputs: [confirmed_embodiments, out:P1/01, out:P1/02, out:P1/03, terminology, out:P2/09]
 optional_inputs: [out:P2/10, intake:data/*, intake:drawings]
 deliverable_sections: ["Specification Blueprint", "Claim-Family Support Map"]
-timeout_s: 1800
+timeout_s: 3600
 include_rationale: false
 ---
 

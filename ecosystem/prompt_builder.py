@@ -401,6 +401,28 @@ def _fit(plan: _Plan, settings: Settings, allow_truncate: bool) -> tuple[list[st
     dropped: list[str] = []
     truncated: list[str] = []
 
+    # Digest cap (config `max_embed_chars`): long analysis outputs from earlier
+    # phases are embedded head-first up to the cap. The agent sees where the
+    # cut is and what it lost; the full text stays in the dossier.
+    cap = int(getattr(settings, "max_embed_chars", 0) or 0)
+    if cap > 0:
+        for attr in ("required", "optional"):
+            items = getattr(plan, attr)
+            capped: list[ResolvedInput] = []
+            for item in items:
+                if item.chars > cap and _cappable(item.spec):
+                    capped.append(_digest(item, cap))
+                    truncated.append(item.spec)
+                    log.warning(
+                        "digest cap: embedded %s head-first (%d of %d chars)",
+                        item.spec,
+                        cap,
+                        item.chars,
+                    )
+                else:
+                    capped.append(item)
+            setattr(plan, attr, capped)
+
     while plan.optional and len(plan.render()) > budget:
         largest = max(plan.optional, key=lambda item: item.chars)
         plan.optional = [item for item in plan.optional if item is not largest]
@@ -430,6 +452,23 @@ def _fit(plan: _Plan, settings: Settings, allow_truncate: bool) -> tuple[list[st
             "truncated - reduce the prompt's input list"
         )
     return dropped, truncated
+
+
+_NEVER_CAPPED_PREFIXES = ("intake:", "terminology", "package:", "registry", "numeral_crosscheck")
+_NEVER_CAPPED_EXACT = {"out:P4/description", "out:P5/claims", "gate1:answers"}
+
+
+def _cappable(spec: str) -> bool:
+    """Phase outputs can be digested; filing text and the disclosure cannot."""
+    return not (spec in _NEVER_CAPPED_EXACT or spec.startswith(_NEVER_CAPPED_PREFIXES))
+
+
+def _digest(item: ResolvedInput, cap: int) -> ResolvedInput:
+    marker = (
+        f"\n\n[DIGEST CAP: the first {cap:,} of {item.chars:,} characters are embedded above; "
+        f"the rest of this file was not shown to you. Do not assume the omitted part is empty.]"
+    )
+    return item.model_copy(update={"text": item.text[:cap] + marker, "chars": cap})
 
 
 def _truncate(item: ResolvedInput, keep: int) -> ResolvedInput:

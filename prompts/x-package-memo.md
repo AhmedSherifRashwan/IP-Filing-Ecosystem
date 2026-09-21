@@ -7,7 +7,7 @@ kind: prose
 inputs: [package:all, findings:all, out:REVIEW/gate14, out:REVIEW/39]
 optional_inputs: [inner_loop_flags, open_disagreements, out:REVIEW/40]
 deliverable_sections: []
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

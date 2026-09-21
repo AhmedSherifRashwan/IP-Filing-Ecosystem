@@ -7,7 +7,7 @@ kind: drafting
 inputs: [out:P1/01, out:P1/03, out:P2/09, out:P2/10, terminology, intake:gate-1-answers]
 optional_inputs: [out:P1/02, out:P2/08]
 deliverable_sections: ["Design-Around Risk Register"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

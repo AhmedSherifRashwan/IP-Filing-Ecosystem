@@ -7,7 +7,7 @@ kind: review
 inputs: [package:claims]
 optional_inputs: [terminology]
 deliverable_sections: ["Forensic Audit"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

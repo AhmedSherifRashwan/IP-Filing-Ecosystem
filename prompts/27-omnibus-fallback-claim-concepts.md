@@ -7,7 +7,7 @@ kind: drafting
 inputs: [out:P4/description, registry, out:P4/19, out:P2/09, out:P1/02, terminology, out:P5/25]
 optional_inputs: [out:P2/10, out:P5/21, out:P4/16]
 deliverable_sections: ["Omnibus Fallback Concepts"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

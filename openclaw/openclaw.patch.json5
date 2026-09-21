@@ -64,7 +64,7 @@
         agentDir: "${HOME}/.openclaw/agents/ip-spec/agent",
         identity: { name: "ip-spec" },
         model: "anthropic/claude-opus-5",
-        thinkingDefault: "high",
+        thinkingDefault: "medium",
         tools: { profile: "minimal" },
       },
       "ip-claims": {
@@ -73,7 +73,7 @@
         agentDir: "${HOME}/.openclaw/agents/ip-claims/agent",
         identity: { name: "ip-claims" },
         model: "anthropic/claude-opus-5",
-        thinkingDefault: "high",
+        thinkingDefault: "medium",
         tools: { profile: "minimal" },
       },
       "ip-reviewer": {

@@ -7,7 +7,7 @@ kind: analysis
 inputs: [out:P1/01, out:P1/03, terminology, intake:gate-1-answers]
 optional_inputs: [out:P1/04, out:P2/06, intake:prior-art/*]
 deliverable_sections: ["Prior-Art Claim Charts"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

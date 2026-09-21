@@ -100,6 +100,8 @@ _ERROR_SIGNATURES: Final[tuple[tuple[str, type[GatewayError]], ...]] = (
     ("invalid token", GatewayAuthError),
     ("auth", GatewayAuthError),
     ("timeout", GatewayTransientError),
+    ("was terminated", GatewayTransientError),
+    ("produced no output", GatewayTransientError),
     ("timed out", GatewayTransientError),
     ("econnrefused", GatewayTransientError),
     ("connection", GatewayTransientError),

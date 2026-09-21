@@ -7,7 +7,7 @@ kind: drafting
 inputs: [confirmed_embodiments, terminology, out:P4/16, out:P4/18, out:P4/20]
 optional_inputs: [intake:drawings, out:P4/description, out:P5/claims, registry]
 deliverable_sections: ["Figure Instructions", "Reference-Numeral Registry"]
-timeout_s: 1800
+timeout_s: 3600
 include_rationale: false
 ---
 

@@ -7,7 +7,7 @@ kind: analysis
 inputs: [intake:disclosure, out:P1/01]
 optional_inputs: [intake:data/*]
 deliverable_sections: ["Commercial Value Map"]
-timeout_s: 1200
+timeout_s: 2400
 include_rationale: false
 ---
 

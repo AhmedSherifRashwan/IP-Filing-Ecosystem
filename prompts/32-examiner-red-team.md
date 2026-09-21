@@ -7,7 +7,7 @@ kind: review
 inputs: [package:all]
 optional_inputs: []
 deliverable_sections: ["Ranked Objections"]
-timeout_s: 1800
+timeout_s: 3600
 include_rationale: false
 ---
 

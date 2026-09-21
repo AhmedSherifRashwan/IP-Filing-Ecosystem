@@ -7,7 +7,7 @@ kind: compose
 inputs: [out:P4/16, out:P4/17, out:P4/18, out:P4/19, out:P4/20, out:P4/20a, confirmed_embodiments, terminology, registry]
 optional_inputs: [out:P1/01, intake:drawings]
 deliverable_sections: ["Description"]
-timeout_s: 2400
+timeout_s: 5400
 include_rationale: false
 ---
 
