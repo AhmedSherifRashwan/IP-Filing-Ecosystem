@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
     "AGENT_IDS",
+    "ANALYSIS_TIER_PROMPTS",
     "FINDING_CATEGORIES",
     "PHASES",
     "PHASE_AGENT",
@@ -74,6 +75,15 @@ PHASE_AGENT: Final[dict[str, str]] = {
 }
 
 # Loop-back routing keys. A finding carrying any other category is a contract error.
+# Prompts whose work is analysis rather than the drafting of specification or
+# claim text. They run on the analysis-tier model (an OpenAI model through the
+# OpenClaw login) so the Claude session quota is spent where wording matters:
+# the invention capture and terminology (01, 03, 04), the design-around attack
+# and equivalents (11, 12), everything in Phases 4 and 5, and the revisions.
+ANALYSIS_TIER_PROMPTS: Final[frozenset[str]] = frozenset(
+    {"02", "05", "06", "07", "08", "09", "10", "13", "14", "15", "17", "x-search-triage"}
+)
+
 FINDING_CATEGORIES: Final[list[str]] = [
     "novelty",
     "enablement",
@@ -105,6 +115,10 @@ class Settings(BaseModel):
 
     openclaw_bin: str = _DEFAULT_OPENCLAW_BIN
     max_parallel_calls: int = 8
+    # Model tiering. Empty string disables (every prompt uses its agent's model).
+    model_analysis: str = "openai/gpt-5.6-sol"
+    # Comma-separated prompt ids; empty means ANALYSIS_TIER_PROMPTS.
+    analysis_prompts: str = ""
 
     # Assembly budget. A prompt over this is a design error in the input list,
     # not something to silently truncate.
@@ -173,6 +187,23 @@ class Settings(BaseModel):
         """`dossiers_dir` as a plain Path. Same reasoning as `prompts_path`."""
         assert self.dossiers_dir is not None
         return self.dossiers_dir
+
+    def analysis_prompt_ids(self) -> frozenset[str]:
+        raw = self.analysis_prompts.strip()
+        if not raw:
+            return ANALYSIS_TIER_PROMPTS
+        return frozenset(x.strip().lower() for x in raw.split(",") if x.strip())
+
+    def model_for_prompt(self, prompt_id: str, explicit: str | None = None) -> str | None:
+        """The per-call model override, or None to use the agent's own model."""
+        if explicit:
+            return explicit
+        tier = self.model_analysis.strip()
+        if tier.lower() in {"", "none", "off"}:
+            return None
+        if prompt_id.lower() in self.analysis_prompt_ids():
+            return tier
+        return None
 
     def dossier_root(self, slug: str) -> Path:
         """Path of one matter's dossier. Slug validity is the CLI's business."""

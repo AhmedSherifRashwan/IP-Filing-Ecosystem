@@ -435,3 +435,19 @@ def test_checked_in_fixtures_satisfy_their_contract(name: str, kind: str) -> Non
     assert parsed.body_md
     if kind != "prose":
         assert parsed.envelope is not None
+
+
+def test_analysis_prompts_request_the_tier_model(
+    dossier: Dossier, state: MatterState, playbook: Playbook, settings: Settings, replays: Path
+) -> None:
+    from tests.fakes import FakeTransport
+
+    _lock(dossier)
+    spec = _spec(id="06", phase="P2", agent="ip-prior-art", kind="analysis")
+    _fixture(replays, "demo-p2-06-v1", drafting_reply("06", ["Section"]))
+    transport = FakeTransport(fixtures_dir=replays)
+    Caller(
+        dossier, state, playbook, transport, settings, EventLog(dossier.log_path, "demo")
+    ).execute(spec, _version(dossier, "P2"))
+    assert transport.calls[-1].model == "openai/gpt-5.6-sol"
+    assert state.agent_runs[-1].requested_model == "openai/gpt-5.6-sol"

@@ -216,6 +216,7 @@ class AgentRun(_Loose):
     status: str = "started"
     provider: str | None = None
     model: str | None = None
+    requested_model: str | None = None
     duration_ms: int | None = None
     prompt_chars: int | None = None
     reply_chars: int | None = None

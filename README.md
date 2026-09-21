@@ -125,6 +125,20 @@ The independent review runs two reviewers on different model families in
 parallel; findings both raise are marked consensus, and only consensus or
 critical findings drive loop-backs.
 
+## Model tiering
+
+Analysis-only prompts (commercial value map, inventor questions, all of Phase
+2, parameter ladders, combination map, failure modes, enablement audit, search
+triage) run on `openai/gpt-5.6-sol` through the OpenClaw OpenAI login, so the
+Claude session quota is spent on the prompts where wording matters: invention
+capture and terminology, design-arounds and equivalents, the specification,
+the claims and every revision. Tiered calls go through `openclaw agent --model`
+(the gateway RPC refuses per-call overrides). Configure with
+`IPFE_MODEL_ANALYSIS=<model id>` (`none` disables) and
+`IPFE_ANALYSIS_PROMPTS=02,05,...` to change the set; a `model:` line in a
+prompt's frontmatter overrides both. The model actually used is recorded per
+call in the evidence pack's provenance.
+
 ## Develop
 
 ```bash

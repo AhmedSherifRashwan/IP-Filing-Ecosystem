@@ -343,6 +343,12 @@ class Caller:
             transport=assembled.transport_hint,
             dry_run=ctx.dry_run,
         )
+        # Model tiering: analysis prompts run on the analysis-tier model; a
+        # `model:` line in the prompt's frontmatter wins over the tier.
+        explicit = getattr(spec, "model", None) or (spec.model_extra or {}).get("model")
+        result.requested_model = self.settings.model_for_prompt(spec.id, explicit)
+        if result.requested_model:
+            result.transport = "agent-cli"
         if ctx.dry_run:
             return result
 
@@ -364,6 +370,7 @@ class Caller:
             session_key=result.session_key,
             idempotency_key=idem,
             prompt_chars=assembled.chars,
+            requested_model=result.requested_model,
         )
         self.state.agent_runs.append(run)
         self.state.cursor.call_id = call_id
@@ -486,6 +493,7 @@ class Caller:
             session_key=result.session_key,
             idempotency_key=result.idempotency_key,
             timeout_s=timeout_s or self.settings.default_timeout_s,
+            model=result.requested_model,
         )
         # AutoTransport retries transient failures itself (and re-selects the
         # backend per attempt); wrapping it again would multiply the attempts.

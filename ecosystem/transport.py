@@ -193,6 +193,9 @@ class CallRequest:
     session_key: str
     idempotency_key: str
     timeout_s: int = 1200
+    # Per-call model override (model tiering). Only the `openclaw agent` CLI
+    # honours it; the gateway RPC refuses provider/model overrides.
+    model: str | None = None
 
     def with_retry(self, attempt: int) -> CallRequest:
         return CallRequest(
@@ -202,6 +205,7 @@ class CallRequest:
             session_key=_retry_key(self.session_key, attempt),
             idempotency_key=_retry_key(self.idempotency_key, attempt),
             timeout_s=self.timeout_s,
+            model=self.model,
         )
 
 
@@ -377,7 +381,7 @@ class AgentCliBackend(_CliBackend):
             "--json",
             "--timeout",
             str(req.timeout_s),
-        ]
+        ] + (["--model", req.model] if req.model else [])
 
     def call(self, req: CallRequest) -> GatewayReply:
         # The file is the message here; a missing one would send an empty turn.
@@ -417,6 +421,12 @@ class AutoTransport:
 
     def select(self, req: CallRequest) -> _CliBackend:
         size = self.params_bytes(req)
+        if req.model:
+            # The gateway RPC answers "provider/model overrides are not
+            # authorized for this caller"; the CLI path is the one that works.
+            if size > self.agent_cli_max:
+                raise PromptTooLarge(size, self.agent_cli_max)
+            return self.agent_cli
         if size > self.settings.agent_cli_max_bytes:
             raise PromptTooLarge(
                 f"prompt for {req.agent_id} serialises to {size} bytes, over the "
