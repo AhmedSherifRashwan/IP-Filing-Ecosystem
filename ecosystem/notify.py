@@ -118,6 +118,8 @@ _MILESTONES: Final[frozenset[str]] = frozenset(
         "search_unavailable",
         "quota_wait",
         "quota_resumed",
+        "revision_skipped",
+        "output_partial",
     }
 )
 
@@ -227,6 +229,21 @@ def format_event(
             return f"{head}: final filing package built at {detail.get('path')}."
         return (
             f"{head}: review package assembled (description, figures, claims only) for ip-reviewer."
+        )
+    if event == "reply_defective":
+        return (
+            f"{head}: {_phase_label(phase)} — {prompt_label} came back {detail.get('reason')}; "
+            f"retrying in a fresh session (attempt {detail.get('retry')})."
+        )
+    if event == "revision_skipped":
+        return (
+            f"{head}: {_phase_label(phase)} — {prompt_label} failed twice, so this revision was "
+            f"skipped and the previous text stands; the reviewer will see it as is."
+        )
+    if event == "output_partial":
+        return (
+            f"{head}: {_phase_label(phase)} — {prompt_label} never followed the output contract; "
+            f"its raw reply was kept as a partial output and the run continued."
         )
     if event == "quota_wait":
         mins = max(1, int(detail.get("wait_s") or 0) // 60)

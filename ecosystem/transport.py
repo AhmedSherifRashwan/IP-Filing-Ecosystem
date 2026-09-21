@@ -198,6 +198,8 @@ class CallRequest:
     # Per-call model override (model tiering). Only the `openclaw agent` CLI
     # honours it; the gateway RPC refuses provider/model overrides.
     model: str | None = None
+    # Retry of a defective agent-cli reply: take the gateway path when it fits.
+    prefer_gateway: bool = False
 
     def with_retry(self, attempt: int) -> CallRequest:
         return CallRequest(
@@ -208,6 +210,7 @@ class CallRequest:
             idempotency_key=_retry_key(self.idempotency_key, attempt),
             timeout_s=self.timeout_s,
             model=self.model,
+            prefer_gateway=self.prefer_gateway,
         )
 
 
@@ -447,6 +450,8 @@ class AutoTransport:
             return self.gateway
         if self.force == "agent-cli":
             return self.agent_cli
+        if req.prefer_gateway and size <= self.settings.gateway_call_max_bytes:
+            return self.gateway
         return self.gateway if size <= self.settings.gateway_call_max_bytes else self.agent_cli
 
     def call(self, req: CallRequest) -> GatewayReply:

@@ -18,6 +18,8 @@ from pydantic import BaseModel, ConfigDict, Field
 __all__ = [
     "AGENT_IDS",
     "ANALYSIS_TIER_PROMPTS",
+    "CRITICAL_PROMPTS",
+    "REVISION_PROMPTS",
     "FINDING_CATEGORIES",
     "PHASES",
     "PHASE_AGENT",
@@ -84,6 +86,16 @@ ANALYSIS_TIER_PROMPTS: Final[frozenset[str]] = frozenset(
     {"02", "05", "06", "07", "08", "09", "10", "13", "14", "15", "17", "x-search-triage"}
 )
 
+# Prompts whose output the rest of the run cannot do without. Any other prompt
+# that fails twice in an unattended run is recorded as partial and the run goes
+# on; a revision prompt that fails is skipped (the previous text stands).
+CRITICAL_PROMPTS: Final[frozenset[str]] = frozenset(
+    {"01", "04", "16", "x-p4-compose-description", "22", "25", "39a"}
+)
+REVISION_PROMPTS: Final[frozenset[str]] = frozenset(
+    {"x-p4-revise", "x-p5-revise", "x-formal-fix", "x-loopback-p3"}
+)
+
 FINDING_CATEGORIES: Final[list[str]] = [
     "novelty",
     "enablement",
@@ -115,6 +127,12 @@ class Settings(BaseModel):
 
     openclaw_bin: str = _DEFAULT_OPENCLAW_BIN
     max_parallel_calls: int = 8
+    # Fresh-session retries for a defective (empty or head-truncated) reply.
+    fresh_retries: int = 2
+    # Inner loop stops early when the claims drafter's disclosure requests are
+    # this few, or shrank by less than this fraction from the previous round.
+    inner_loop_min_requests: int = 5
+    inner_loop_min_progress: float = 0.25
     # Model tiering. Empty string disables (every prompt uses its agent's model).
     model_analysis: str = "openai/gpt-5.6-sol"
     # Comma-separated prompt ids; empty means ANALYSIS_TIER_PROMPTS.
@@ -132,12 +150,12 @@ class Settings(BaseModel):
 
     # Transport selection. `gateway call` carries params in argv (macOS ARG_MAX
     # is 1 MiB); `agent --message-file` is documented at 4 MiB.
-    gateway_call_max_bytes: int = 400_000
+    gateway_call_max_bytes: int = 600_000
     agent_cli_max_bytes: int = 4_194_304
 
     default_timeout_s: int = 2400
 
-    inner_loop_cap: int = 3
+    inner_loop_cap: int = 2
     loopback_cap: int = 2
     formal_fix_cap: int = 2
     gate2_reconfirm_on_loopback: bool = True

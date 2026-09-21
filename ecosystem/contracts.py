@@ -18,6 +18,7 @@ from typing import Any, Final, Literal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
 __all__ = [
+    "reply_looks_defective",
     "ContractError",
     "Correction",
     "DraftingEnvelope",
@@ -389,3 +390,29 @@ def _readable(exc: ValidationError) -> str:
         location = ".".join(str(part) for part in error["loc"]) or "<root>"
         lines.append(f"  - {location}: {error['msg']}")
     return "\n".join(lines)
+
+
+_FIRST_HEADING_BY_KIND = {
+    "review": "## Findings",
+    "prose": None,
+}
+
+
+def reply_looks_defective(text: str, kind: str) -> str | None:
+    """Why a reply cannot be a real answer, or None.
+
+    "empty": nothing came back. "head-truncated": a long reply that does not
+    open with the contract's first heading and shows no heading at all in its
+    first lines - the runtime returned the tail of a multi-part answer. Both are
+    transport defects to retry, not contract failures to correct.
+    """
+    body = (text or "").strip()
+    if len(body) < 50:
+        return "empty"
+    first = _FIRST_HEADING_BY_KIND.get(kind, "## Deliverable")
+    if first is None or len(body) < 1500:
+        return None
+    head = body[:400]
+    if first in head or "\n## " in head or head.startswith("## ") or head.startswith("```json"):
+        return None
+    return "head-truncated"

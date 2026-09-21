@@ -655,7 +655,7 @@ class Runner:
                     open_disagreements=len(disagreements),
                 )
             )
-            loop.converged = not requests and not disagreements
+            loop.converged = self._inner_converged(loop, len(requests), len(disagreements))
             self.events.emit(
                 "inner_loop_round",
                 round=round_no,
@@ -672,6 +672,27 @@ class Runner:
             self._inner_loop_flags = self._flags_text()
             log.warning("inner loop hit its cap of %d rounds without converging", loop.cap)
         return None
+
+    def _inner_converged(self, loop: Any, requests: int, disagreements: int) -> bool:
+        """Stop the spec/claims loop at diminishing returns, not only at zero.
+
+        The claims drafter nearly always asks for something more; two rounds
+        answer the bulk of it, and the independent review catches what is
+        left. Another round of two 200k-character drafts buys little and costs
+        an hour, so the loop converges when requests are few, or shrank by less
+        than `inner_loop_min_progress` since the previous round.
+        """
+        if requests == 0 and disagreements == 0:
+            return True
+        few = int(getattr(self.settings, "inner_loop_min_requests", 5))
+        if requests <= few:
+            return True
+        previous = loop.rounds[-2].disclosure_requests if len(loop.rounds) >= 2 else None
+        if previous:
+            progress = float(getattr(self.settings, "inner_loop_min_progress", 0.25))
+            if requests >= previous * (1.0 - progress):
+                return True
+        return False
 
     def _inner_ctx(self, spec: PromptSpec) -> AttemptContext:
         return AttemptContext(input_ctx=InputContext(phase=spec.phase, prompt_id=spec.id))

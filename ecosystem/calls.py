@@ -30,13 +30,14 @@ from pathlib import Path
 from typing import Any, Final
 
 from ecosystem import numerals
-from ecosystem.config import Settings
+from ecosystem.config import CRITICAL_PROMPTS, REVISION_PROMPTS, Settings
 from ecosystem.contracts import (
     ContractError,
     DraftingEnvelope,
     ParsedReply,
     ReviewEnvelope,
     parse_reply,
+    reply_looks_defective,
 )
 from ecosystem.dossier import Dossier, InputContext, ResolvedInput, WouldOverwrite
 from ecosystem.log import EventLog
@@ -222,6 +223,9 @@ class CallResult:
     provider: str | None = None
     model: str | None = None
     requested_model: str | None = None
+    prefer_gateway: bool = False
+    skipped: bool = False
+    partial: bool = False
     duration_ms: int = 0
     attempts: int = 1
     contract_corrected: bool = False
@@ -392,6 +396,7 @@ class Caller:
             )
             raise
 
+        reply = self._retry_defective(result, spec, prompt_path, assembled.text, reply)
         result.reply_text = reply.text
         result.run_id = reply.run_id
         result.provider = reply.provider
@@ -406,7 +411,13 @@ class Caller:
         run.reply_chars = len(reply.text)
 
         attempt = 0
-        parsed, attempt = self._parse_with_correction(result, spec, reply, attempt)
+        try:
+            parsed, attempt = self._parse_with_correction(result, spec, reply, attempt)
+        except ContractFailed as exc:
+            fallback = self._fallback(result, spec, ctx, run, exc)
+            if fallback is None:
+                raise
+            return fallback
         result.parsed = parsed
 
         report = self._terminology(result, spec, parsed)
@@ -435,6 +446,140 @@ class Caller:
         if report is not None:
             self._settle_terminology(result, spec, report)
         return result
+
+    # -- resilience ---------------------------------------------------------
+
+    def _fresh_session(self, result: CallResult, tag: str) -> None:
+        """Point the result at a new session and idempotency key for a re-run.
+
+        The gateway holds one turn per key and a fresh session has no memory
+        of a defective attempt. The gateway path is preferred when the prompt
+        fits: it has never returned a partial answer, the CLI path has.
+        """
+        base_key = result.session_key.split("-fresh")[0]
+        base_idem = result.idempotency_key.split(":fresh")[0]
+        result.session_key = f"{base_key}-{tag}"
+        result.idempotency_key = f"{base_idem}:{tag}"
+        result.prefer_gateway = True
+
+    def _retry_defective(
+        self,
+        result: CallResult,
+        spec: PromptSpec,
+        prompt_path: Path,
+        text: str,
+        reply: GatewayReply,
+    ) -> GatewayReply:
+        """Re-run an empty or head-truncated reply in a fresh session, up to `fresh_retries`."""
+        retries = int(getattr(self.settings, "fresh_retries", 2))
+        n = 0
+        while n < retries:
+            reason = reply_looks_defective(reply.text, spec.kind)
+            if reason is None:
+                return reply
+            n += 1
+            self.events.emit(
+                "reply_defective",
+                phase=spec.phase,
+                prompt=spec.id,
+                call_id=result.call_id,
+                reason=reason,
+                retry=n,
+                reply_chars=len(reply.text),
+            )
+            self._fresh_session(result, f"fresh{n}")
+            reply = self._send(result, prompt_path, text, spec.timeout_s)
+        return reply
+
+    def _fallback(
+        self,
+        result: CallResult,
+        spec: PromptSpec,
+        ctx: AttemptContext,
+        run: AgentRun,
+        error: ContractFailed,
+    ) -> CallResult | None:
+        """What happens when a reply never follows the contract.
+
+        A revision prompt is skipped: the previous text stands and the reviewer
+        sees it. A non-critical prompt keeps its raw reply as a partial output.
+        A critical prompt (the disclosure, the terminology, the description, the
+        claims, the abstract) has no substitute, so the run stops. None = stop.
+        """
+        critical = spec.id in getattr(self.settings, "critical_prompts", CRITICAL_PROMPTS)
+        if critical:
+            return None
+        run.finished_at = _now()
+        result.attempts = max(result.attempts, 1)
+        if spec.id in REVISION_PROMPTS:
+            run.status = "skipped"
+            result.skipped = True
+            self.events.emit(
+                "revision_skipped",
+                phase=spec.phase,
+                prompt=spec.id,
+                call_id=result.call_id,
+                error=error.message,
+            )
+            self.state.bump("revisions_skipped")
+            return result
+        run.status = "partial"
+        result.partial = True
+        if ctx.write_output:
+            self._write_partial(result, spec, ctx, error)
+        self.events.emit(
+            "output_partial",
+            phase=spec.phase,
+            prompt=spec.id,
+            call_id=result.call_id,
+            error=error.message,
+        )
+        self.state.bump("outputs_partial")
+        return result
+
+    def _write_partial(
+        self, result: CallResult, spec: PromptSpec, ctx: AttemptContext, error: ContractFailed
+    ) -> None:
+        frontmatter: dict[str, Any] = {
+            "matter": self.dossier.slug,
+            "phase": result.phase,
+            "prompt": result.prompt_id,
+            "version": result.version,
+            "agent": result.agent_id,
+            "model": result.model,
+            "provider": result.provider,
+            "run_id": result.run_id,
+            "call_id": result.call_id,
+            "created_at": _now(),
+            "status": "partial",
+            "inputs": result.assembled.input_refs(self.dossier.root),
+        }
+        envelope = {
+            "prompt": spec.id,
+            "status": "partial",
+            "assumptions": [],
+            "open_questions": [
+                {
+                    "id": "Q-RUNNER",
+                    "text": "This reply did not follow the output contract after a "
+                    f"correction turn and a fresh attempt ({error.message}). The raw reply "
+                    "is kept verbatim; treat every statement in it as unverified.",
+                    "blocks": [],
+                }
+            ],
+            "new_terms": [],
+            "support_refs": [],
+        }
+        result.output_path = self.dossier.write_output(
+            result.phase,
+            result.version,
+            result.prompt_id,
+            ctx.title_slug or slugify(spec.title),
+            result.reply_text or "",
+            frontmatter,
+            envelope=envelope,
+        )
+        self.state.bump("outputs")
 
     # -- transport ----------------------------------------------------------
 
@@ -495,6 +640,7 @@ class Caller:
             idempotency_key=result.idempotency_key,
             timeout_s=timeout_s or self.settings.default_timeout_s,
             model=result.requested_model,
+            prefer_gateway=result.prefer_gateway,
         )
         # AutoTransport retries transient failures itself (and re-selects the
         # backend per attempt); wrapping it again would multiply the attempts.
@@ -567,6 +713,9 @@ class Caller:
             try:
                 return parse_reply(retry.text, spec.kind), attempt
             except ContractError as second:
+                fresh = self._fresh_rerun(result, spec, attempt)
+                if fresh is not None:
+                    return fresh, attempt + 1
                 self.events.emit(
                     "contract_failed",
                     phase=spec.phase,
@@ -575,6 +724,33 @@ class Caller:
                     error=second.message,
                 )
                 raise ContractFailed(result.call_id, second.message) from second
+
+    def _fresh_rerun(
+        self, result: CallResult, spec: PromptSpec, attempt: int
+    ) -> ParsedReply | None:
+        """One more full attempt in a clean session before the fallback ladder."""
+        self._fresh_session(result, f"rerun{attempt}")
+        prompt_path = self.dossier.run_dir(result.call_id) / "prompt.md"
+        try:
+            reply = self._send(result, prompt_path, result.assembled.text, spec.timeout_s)
+        except Exception as exc:  # the ladder below decides; a failed re-run is not fatal
+            log.warning("fresh re-run of %s failed: %s", result.call_id, exc)
+            return None
+        reply = self._retry_defective(result, spec, prompt_path, result.assembled.text, reply)
+        try:
+            parsed = parse_reply(reply.text, spec.kind)
+        except ContractError as exc:
+            log.warning("fresh re-run of %s still off-contract: %s", result.call_id, exc.message)
+            return None
+        result.reply_text = reply.text
+        self.events.emit(
+            "contract_corrected",
+            phase=spec.phase,
+            prompt=spec.id,
+            call_id=result.call_id,
+            error="recovered by a fresh-session re-run",
+        )
+        return parsed
 
     def _contract_correction_text(
         self,

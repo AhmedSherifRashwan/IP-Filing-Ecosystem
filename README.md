@@ -125,6 +125,20 @@ The independent review runs two reviewers on different model families in
 parallel; findings both raise are marked consensus, and only consensus or
 critical findings drive loop-backs.
 
+## Resilience
+
+An unattended run is built to finish. Large prompts take the gateway path
+(the CLI path can return only the tail of a long answer); an empty or
+head-truncated reply is retried in a fresh session; a reply that breaks the
+output contract gets a self-contained correction turn, then a fresh re-run;
+if it still fails, a revision prompt is skipped (the previous text stands) and
+any other non-critical prompt is kept as a `partial` output, so only the
+disclosure, terminology, description, claims and abstract prompts can stop a
+run. Provider session limits pause the run until the reset; a Claude CLI
+watchdog kill is retried. The spec/claims inner loop runs two rounds and stops
+early at diminishing returns. Every fallback is an event the runner pushes
+into your chat and a line in the evidence pack.
+
 ## Model tiering
 
 Analysis-only prompts (commercial value map, inventor questions, all of Phase
