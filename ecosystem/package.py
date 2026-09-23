@@ -27,6 +27,7 @@ from typing import Any, Final
 
 from ecosystem import evidence as evidence_module
 from ecosystem import ledger as ledger_module
+from ecosystem import report
 from ecosystem import state as state_module
 from ecosystem.calls import section_body
 from ecosystem.contracts import Finding, deliverable_only
@@ -288,6 +289,12 @@ def build_final_package(
     members.append(_gate14(dossier, review.path, target / "gate-14.md"))
     members.append(_residuals(dossier, state, review.path, target / "residual-findings.md"))
     members.append(_gate_decisions(dossier, state, target / "gate-decisions.md"))
+    try:
+        members.append(
+            report.build_findings_report(dossier, state, review.path, target / "findings-report.md")
+        )
+    except Exception as exc:  # a report is never a reason to lose the package
+        log.warning("findings report could not be built: %s", exc)
     members.append(
         _write(
             target / "cover-memo.md",

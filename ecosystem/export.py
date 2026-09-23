@@ -36,6 +36,11 @@ _RULE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*([-*_])\1{2,}\s*$")
 _FENCE_RE: Final[re.Pattern[str]] = re.compile(r"^\s*(```|~~~)")
 _TABLE_SEP_RE: Final[re.Pattern[str]] = re.compile(r"^\s*\|?[\s:|-]+\|[\s:|-]*$")
 # Inline: **bold**, *italic* / _italic_, `code`. Links keep their text.
+# Past these a PDF table stops being renderable: reportlab cannot split a row
+# taller than the page, so the rows are flowed as labelled entries instead.
+_TABLE_MAX_ROWS: Final[int] = 30
+_TABLE_MAX_CELL: Final[int] = 400
+
 _INLINE_RE: Final[re.Pattern[str]] = re.compile(
     r"(\*\*.+?\*\*|__.+?__|\*[^*\n]+?\*|_[^_\n]+?_|`[^`\n]+?`|\[[^\]]+\]\([^)]*\))"
 )
@@ -213,7 +218,9 @@ def to_docx(blocks: list[Block], target: Path, title: str = "") -> Path:
     style = document.styles["Normal"]
     style.font.name = "Calibri"
     style.font.size = Pt(11)
-    if title:
+    # The markdown usually opens with its own title; adding a second one to the
+    # front of a filing document looks like a mistake, because it is one.
+    if title and not (blocks and blocks[0].kind == "heading" and blocks[0].level == 1):
         document.add_heading(title, level=0)
 
     for block in blocks:
@@ -340,7 +347,7 @@ def to_pdf(blocks: list[Block], target: Path, title: str = "") -> Path:
     )
     width = document.width
     story: list[Any] = []
-    if title:
+    if title and not (blocks and blocks[0].kind == "heading" and blocks[0].level == 1):
         story += [Paragraph(html.escape(title), headings[1]), Spacer(1, 6)]
 
     pending: list[Any] = []
@@ -374,6 +381,24 @@ def to_pdf(blocks: list[Block], target: Path, title: str = "") -> Path:
             story.append(Spacer(1, 6))
         elif block.kind == "table" and block.rows:
             columns = max(len(row) for row in block.rows)
+            # reportlab cannot split a row that is taller than the page, and a
+            # findings table has cells hundreds of words long. Past these sizes
+            # the rows are written out as labelled entries instead: everything
+            # is kept, and it always paginates.
+            longest = max((len(cell) for row in block.rows for cell in row), default=0)
+            if len(block.rows) > _TABLE_MAX_ROWS or longest > _TABLE_MAX_CELL:
+                header = block.rows[0]
+                for row in block.rows[1:]:
+                    parts = [
+                        f"<b>{html.escape(header[i] if i < len(header) else '')}:</b> "
+                        + _markup(row[i] if i < len(row) else "")
+                        for i in range(columns)
+                        if (i < len(row) and row[i].strip())
+                    ]
+                    story.append(Paragraph(" · ".join(parts), body))
+                    story.append(Spacer(1, 3))
+                story.append(Spacer(1, 6))
+                continue
             data = [
                 [Paragraph(_markup(row[i] if i < len(row) else ""), body) for i in range(columns)]
                 for row in block.rows

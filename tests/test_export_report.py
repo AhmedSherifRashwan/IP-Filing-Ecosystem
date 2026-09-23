@@ -175,3 +175,30 @@ def test_the_report_is_honest_when_there_is_nothing_severe(matter) -> None:
     text = findings_report_markdown(dossier, state, [_finding(severity="medium")])
     assert "## Critical findings (0)" in text
     assert "No finding was rated critical." in text
+
+
+def test_a_huge_table_is_flowed_rather_than_lost(tmp_path: Path) -> None:
+    """reportlab cannot split a row taller than the page; nothing may be dropped."""
+    rows = "\n".join(f"| F-{i} | critical | {'word ' * 200} |" for i in range(60))
+    markdown = f"# Residual\n\n| id | severity | note |\n|---|---|---|\n{rows}\n"
+    blocks = parse_markdown(markdown)
+    pdf = to_pdf(blocks, tmp_path / "big.pdf")
+    assert pdf.read_bytes().startswith(b"%PDF")
+    assert pdf.stat().st_size > 10_000
+    # Word keeps it as a real table: Word paginates rows by itself.
+    from docx import Document
+
+    to_docx(blocks, tmp_path / "big.docx")
+    assert Document(str(tmp_path / "big.docx")).tables[0].rows.__len__() == 61
+
+
+def test_a_document_with_its_own_title_is_not_given_a_second_one(tmp_path: Path) -> None:
+    from docx import Document
+
+    source = tmp_path / "d.md"
+    source.write_text("# The Real Title\n\nbody\n", encoding="utf-8")
+    export_markdown(source, tmp_path / "out", title="The Real Title")
+    headings = [
+        p.text for p in Document(str(tmp_path / "out" / "d.docx")).paragraphs if p.text.strip()
+    ]
+    assert headings.count("The Real Title") == 1
