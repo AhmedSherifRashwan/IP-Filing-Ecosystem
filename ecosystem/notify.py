@@ -39,7 +39,8 @@ _RELAY_INSTRUCTION: Final[str] = (
     "person exactly as they are, as a compact list, and nothing else: no preamble, no "
     "summary, no commentary, no tool calls to re-check them. The one exception is a line "
     "starting GATE, REVIEW REQUIRED or FAILED: read the brief or file it names and put "
-    "the decision, or the verbatim error, to the person in the same reply under the list."
+    "the decision, or the verbatim error, to the person in the same reply under the list. "
+    "Keep the progress bar and the line beneath it exactly as they are, at the end."
 )
 
 _PHASE_TITLES: Final[dict[str, str]] = {
@@ -309,6 +310,9 @@ class SessionNotifier:
         verbosity: str = "steps",
         matter: str = "",
         autostart: bool = True,
+        progress: Any = None,
+        plan: Any = None,
+        silence_s: int = 180,
     ) -> None:
         if not session_key.startswith("agent:"):
             raise ValueError("notify session key must look like agent:<id>:<session>")
@@ -323,6 +327,13 @@ class SessionNotifier:
         self.verbosity = verbosity
         self.matter = matter
         self._runner = runner or self._spawn
+        # Where the bar and the estimate come from: a callable, because the run
+        # keeps moving while a message is being composed.
+        self._progress = progress
+        self._plan = plan
+        self.silence_s = max(30, int(silence_s))
+        self._last_line = time.monotonic()
+        self._in_flight: dict[str, float] = {}
         self._lock = threading.RLock()
         self._pending: list[str] = []
         self._last_flush = 0.0
@@ -350,9 +361,29 @@ class SessionNotifier:
             thread.join(timeout=2.0)
 
     def _loop(self) -> None:
-        while not self._stop.wait(2.0):
-            if self._pending and (time.monotonic() - self._last_flush) >= self.interval_s:
+        while not self._stop.wait(1.0):
+            now = time.monotonic()
+            if self._pending and (now - self._last_flush) >= self.interval_s:
                 self.flush()
+            elif (now - self._last_line) >= self.silence_s:
+                self._heartbeat()
+
+    def _heartbeat(self) -> None:
+        """Break a long silence with new information, never with the same status.
+
+        One drafting call can run for eight minutes, and eight silent minutes
+        is how a working run comes to look like a dead one. This names the step
+        in flight and how long it has been going: both have changed since the
+        last message, so it is news rather than a repeated status.
+        """
+        with self._lock:
+            if not self._in_flight:
+                self._last_line = time.monotonic()
+                return
+            step, started = sorted(self._in_flight.items(), key=lambda item: item[1])[0]
+            waited = int(time.monotonic() - started)
+        self._queue([f"{step} · still running, {waited // 60}m{waited % 60:02d}s so far"])
+        self.flush(force=True)
 
     # -- observer -----------------------------------------------------------
 
@@ -363,6 +394,7 @@ class SessionNotifier:
         full = ticker_line(record, self.prompt_titles, "steps")
         if full is not None:
             self._write_progress(full)
+        self._track(record)
         line = (
             full
             if self.verbosity == "steps"
@@ -370,16 +402,37 @@ class SessionNotifier:
         )
         if line is None:
             return
-        with self._lock:
-            self._pending.append(line)
+        lines = [line]
+        if record.get("event") == "phase_started" and self._plan is not None:
+            # A plan is its items: a count tells a reader nothing about what is
+            # being done, or what waits on what.
+            lines.extend(self._plan(record))
+        self._queue(lines)
         if record.get("event") in _URGENT:
             self.flush(force=True)
+
+    def _track(self, record: dict[str, Any]) -> None:
+        """Remember what is in flight, so a silence can name it."""
+        event = record.get("event")
+        prompt = record.get("prompt")
+        if not prompt:
+            return
+        key = f"{_tag(record.get('phase'))} · {prompt}"
+        with self._lock:
+            if event == "call_started":
+                self._in_flight[key] = time.monotonic()
+            elif event in {"call_finished", "call_failed", "contract_failed"}:
+                self._in_flight.pop(key, None)
+
+    def _queue(self, lines: list[str]) -> None:
+        with self._lock:
+            self._pending.extend(lines)
+            self._last_line = time.monotonic()
 
     def send(self, text: str) -> None:
         """Queue one line as if it were an event, and send at once."""
         self._write_progress(text)
-        with self._lock:
-            self._pending.append(text)
+        self._queue([text])
         self.flush(force=True)
 
     # -- delivery -----------------------------------------------------------
@@ -391,10 +444,12 @@ class SessionNotifier:
             if not force and (time.monotonic() - self._last_flush) < self.interval_s:
                 return
             lines, self._pending = self._pending, []
-            self._last_flush = time.monotonic()
+            self._last_flush = self._last_line = time.monotonic()
             self.sent.extend(lines)
             header = f"{MARKER} {self.matter or 'matter'} · {datetime.now().strftime('%H:%M')}"
-            message = "\n".join([header, *lines, "", f"({_RELAY_INSTRUCTION})"])
+            message = "\n".join(
+                [header, *lines, "", *self._picture(), "", f"({_RELAY_INSTRUCTION})"]
+            )
             argv = [
                 self.openclaw_bin,
                 "agent",
@@ -409,6 +464,16 @@ class SessionNotifier:
             if self.deliver:
                 argv.append("--deliver")
             self._runner(argv)
+
+    def _picture(self) -> list[str]:
+        """The bar and the numbers. Every message carries them, so nobody scrolls."""
+        if self._progress is None:
+            return []
+        try:
+            return str(self._progress().render()).splitlines()
+        except Exception as exc:  # a bar is never worth losing the message for
+            log.warning("progress could not be measured: %s", exc)
+            return []
 
     def _write_progress(self, line: str) -> None:
         """Append to `progress.md` at once: the zero-latency record of the run."""

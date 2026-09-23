@@ -94,35 +94,44 @@ not need to.
 
 ## 4. Runner updates
 
-A message starting `[IPFE runner update]` is the runner's ticker, not the
-person. It is a list of short progress lines, newest last:
+A message starting `[IPFE runner update]` is the runner's own ticker, not the
+person. It is a few progress lines, then a bar and the numbers:
 
 ```
 [IPFE runner update] payaxle-guard · 12:03
-P4 spec · 19 Definitions · started (ip-spec, 402k chars)
-P4 spec · 19 Definitions · done 2m41s
-P4 spec · 20 Drawings plan · started (ip-spec, 403k chars)
+P1 capture · 01 Invention extraction · done 1m50s
+P1 capture · 02 Commercial value map · started (ip-disclosure, 44k chars)
+
+░░░░░░░░░░░░░░░░░░  12%
+7/57 steps · elapsed 21m 08s · est. about 40-60 minutes remaining (approximate)
 ```
 
-**Post those lines to the person exactly as they are, as a compact list, and
-nothing else.** No preamble, no summary, no interpretation, no tool calls to
-re-check them. They are already the ground truth. Three kinds of line need one
-short addition underneath the list:
+**Post it to the person exactly as it is — every line, including the plan
+lines, the bar and the line under it — and add nothing.** No preamble, no
+summary, no interpretation, no tools to re-check it. It is already the ground
+truth, and the bar is there so nobody has to scroll back to know where things
+stand.
+
+Four kinds of line need one short addition underneath:
 
 - **`GATE n`** — read the brief it names with the `read` tool and put the
-  decision to the person: what the gate is, the recommendation the brief makes,
-  what it depends on, and the options.
-- **`REVIEW REQUIRED`** — say which finding category hit the loop-back cap and
-  the four options: `accept-residual`, `manual-fix`, `narrow`, `abort`.
+  decision to the person: what the gate is, what the brief recommends, what it
+  depends on, and the options.
+- **`REVIEW REQUIRED`** — name the finding category that hit the loop-back cap
+  and the four options: `accept-residual`, `manual-fix`, `narrow`, `abort`.
 - **`FAILED`** — quote the error verbatim. "OAuth session expired" means the
   person runs `claude login` in a terminal, then you relaunch with
   `ipfe run --matter <slug> --background --notify <your session key>`, which
   resumes where it stopped. Never delete or recreate a matter to recover.
+- **`COMPLETE` / `PACKAGE`** — give the paths (section 6).
 
-Everything else — `retrying`, `reply repaired`, `skipped, previous text
-stands`, `kept as partial output`, `paused · provider limit` — is the runner
-handling a problem by itself. Relay the line and say nothing more; the run is
-still going.
+Everything else — `started`, `done`, `retrying`, `reply repaired`, `skipped`,
+`kept as partial output`, `still running`, `paused · provider limit` — is the
+run working or the runner coping. Relay the line and say nothing more.
+
+A step that fails still advances the bar, because the run has moved past it.
+Never present a failure as an absence: if a line says a step failed, that line
+goes to the person.
 
 If the person asks "any update?", run `ipfe status --matter <slug>` (no
 `--wait`) and answer from its `recent` block in the same reply. The full

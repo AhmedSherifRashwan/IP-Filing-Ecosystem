@@ -127,9 +127,10 @@ class Settings(BaseModel):
 
     openclaw_bin: str = _DEFAULT_OPENCLAW_BIN
     max_parallel_calls: int = 8
-    # Seconds between pushed progress batches. Urgent lines (gates, failures,
-    # pauses, the final package) ignore it and go at once.
-    notify_interval_s: int = 60
+    # Minimum seconds between pushed messages. Each post is a new message, never
+    # an edit; this only stops a burst of parallel steps becoming a burst of
+    # chat turns. Urgent lines (gates, failures, pauses) ignore it.
+    notify_interval_s: int = 10
     # Fresh-session retries for a defective (empty or head-truncated) reply.
     fresh_retries: int = 2
     # Inner loop stops early when the claims drafter's disclosure requests are

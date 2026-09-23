@@ -25,13 +25,14 @@ import signal
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
 from ecosystem import evidence as evidence_module
 from ecosystem import gates as gates_module
 from ecosystem import ledger as ledger_module
-from ecosystem import loopback, package, report
+from ecosystem import loopback, package, progress, report
 from ecosystem import questions as questions_module
 from ecosystem import state as state_module
 from ecosystem import support_check as support_module
@@ -135,6 +136,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
         run.add_argument(
             "--notify-deliver", action="store_true", help="also deliver relays to the channel"
+        )
+        run.add_argument(
+            "--slack",
+            metavar="CHANNEL",
+            help="post the live ticker straight into this Slack channel id (no model turn)",
+        )
+        run.add_argument(
+            "--slack-thread", metavar="TS", help="thread the ticker under this message"
         )
         run.add_argument(
             "--notify-interval",
@@ -437,6 +446,38 @@ def cmd_run(args: argparse.Namespace) -> int:
     return _STOP_EXIT[reason]
 
 
+def _plan_lines(
+    record: dict[str, Any], state: MatterState, playbook: Any, settings: Settings
+) -> list[str]:
+    """The steps a phase just committed to, one line each.
+
+    A plan is the items. "5 steps" tells a reader nothing about what is being
+    done or what is waiting on what, so the items are listed, with the agent
+    that runs each and the sibling it waits for.
+    """
+    phase = str(record.get("phase") or "")
+    wanted = {str(p) for p in ((record.get("detail") or {}).get("prompts") or [])}
+    if not phase or not wanted:
+        return []
+    try:
+        units = [
+            unit
+            for unit in progress.plan_units(state, playbook, settings)
+            if unit.phase == phase and unit.prompt in wanted
+        ]
+    except Exception as exc:  # a plan is never worth failing a message for
+        log.warning("could not build the plan lines: %s", exc)
+        return []
+    seen: set[str] = set()
+    lines: list[str] = []
+    for unit in units:
+        if unit.prompt in seen:
+            continue
+        seen.add(unit.prompt)
+        lines.append(f"   · {unit.line()}")
+    return lines
+
+
 def _attach_notifier(
     args: argparse.Namespace,
     dossier: Dossier,
@@ -484,6 +525,9 @@ def _attach_notifier(
         titles = {pid: spec.title for pid, spec in playbook.prompts.items()}
     except Exception:  # the relay must never depend on the prompt library loading
         titles = {}
+    # This run's clock, not the matter's: a matter resumed after two days has
+    # not been working for two days.
+    started = datetime.now(UTC)
     notifier = SessionNotifier(
         target.session_key,
         settings.resolve_openclaw_bin(),
@@ -494,6 +538,10 @@ def _attach_notifier(
         verbosity=target.verbosity,
         interval_s=int(getattr(args, "notify_interval", None) or settings.notify_interval_s),
         matter=dossier.slug,
+        progress=lambda: progress.measure(
+            state, playbook, settings, settings.dossiers_path, since=started
+        ),
+        plan=lambda record: _plan_lines(record, state, playbook, settings),
     )
     events.subscribe(notifier.on_event)
     return notifier
