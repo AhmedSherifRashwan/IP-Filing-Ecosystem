@@ -357,10 +357,19 @@ class SessionNotifier:
     # -- observer -----------------------------------------------------------
 
     def on_event(self, record: dict[str, Any]) -> None:
-        line = ticker_line(record, self.prompt_titles, self.verbosity)
+        # The file gets every step: it costs nothing and it is what someone
+        # tails when they want to watch. `verbosity` governs only what is worth
+        # spending a model turn to relay into the chat.
+        full = ticker_line(record, self.prompt_titles, "steps")
+        if full is not None:
+            self._write_progress(full)
+        line = (
+            full
+            if self.verbosity == "steps"
+            else ticker_line(record, self.prompt_titles, self.verbosity)
+        )
         if line is None:
             return
-        self._write_progress(line)
         with self._lock:
             self._pending.append(line)
         if record.get("event") in _URGENT:

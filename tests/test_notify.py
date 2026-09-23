@@ -161,3 +161,21 @@ def test_event_log_observers_see_records_and_never_break_the_log(tmp_path: Path)
     assert seen == ["phase_started"]
     lines = (tmp_path / "log.jsonl").read_text().splitlines()
     assert json.loads(lines[-1])["event"] == "phase_started"
+
+
+def test_the_progress_file_records_steps_even_when_the_chat_gets_milestones(
+    tmp_path: Path,
+) -> None:
+    """Milestone relays must not make the run silent on disk."""
+    calls: list[list[str]] = []
+    notifier = _notifier(tmp_path, calls, interval_s=3600, verbosity="milestones")
+    notifier.on_event(_rec("call_started", phase="P1", prompt="01", agent_id="ip-disclosure"))
+    notifier.on_event(_rec("call_finished", phase="P1", prompt="01", duration_ms=5000))
+    notifier.on_event(_rec("phase_completed", phase="P1", version=1, status="complete"))
+
+    written = (tmp_path / "progress.md").read_text()
+    assert "01 · started" in written and "01 · done 5s" in written
+    notifier.close()
+    relayed = calls[0][calls[0].index("--message") + 1]
+    assert "P1 capture · complete" in relayed
+    assert "01 · started" not in relayed

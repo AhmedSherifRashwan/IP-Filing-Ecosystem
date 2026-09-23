@@ -468,8 +468,11 @@ def _attach_notifier(
         state.notify = state_module.NotifyTarget(session_key=key, deliver=deliver)
         changed = True
     verbosity = getattr(args, "notify_verbosity", None)
-    if state.notify is not None and (verbosity or getattr(args, "unattended", False)):
-        state.notify.verbosity = verbosity or "milestones"
+    if state.notify is not None and verbosity and state.notify.verbosity != verbosity:
+        # Unattended used to imply milestones-only, from when every update cost
+        # a model turn. Updates are batched now, so an unattended run is the
+        # one that most needs a running commentary: nobody is watching it.
+        state.notify.verbosity = verbosity
         changed = True
     if changed:
         state_module.save(state, dossier.state_path)
