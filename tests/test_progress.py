@@ -190,3 +190,36 @@ def test_a_long_silence_is_broken_by_naming_the_step_in_flight(tmp_path: Path) -
     message = calls[-1][calls[-1].index("--message") + 1]
     assert "x-p4-compose-description · still running" in message
     assert "so far" in message
+
+
+def test_the_bar_measures_the_state_on_disk_not_a_stale_copy(tmp_path: Path) -> None:
+    """The runner reloads state under its lock; a captured copy never advances."""
+    calls: list[list[str]] = []
+    state = _state()
+    written = tmp_path / "state.json"
+
+    def live() -> MatterState:
+        return MatterState.model_validate_json(written.read_text())
+
+    notifier = SessionNotifier(
+        "agent:patentcounsel:main",
+        "/fake/openclaw",
+        runner=calls.append,
+        progress_path=tmp_path / "progress.md",
+        matter="demo",
+        autostart=False,
+        interval_s=3600,
+        progress=lambda: measure(live()),
+    )
+
+    written.write_text(state.model_dump_json())
+    notifier.on_event({"event": "call_started", "matter": "demo", "phase": "P1", "prompt": "01"})
+    notifier.flush(force=True)
+    assert "0/" in calls[-1][calls[-1].index("--message") + 1]
+
+    state.agent_runs = [_run("01"), _run("02"), _run("03")]
+    written.write_text(state.model_dump_json())
+    notifier.on_event({"event": "call_finished", "matter": "demo", "phase": "P1", "prompt": "03"})
+    notifier.flush(force=True)
+    message = calls[-1][calls[-1].index("--message") + 1]
+    assert "3/" in message and "0/" not in message

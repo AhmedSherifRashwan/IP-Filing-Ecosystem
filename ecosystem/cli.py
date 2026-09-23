@@ -528,6 +528,21 @@ def _attach_notifier(
     # This run's clock, not the matter's: a matter resumed after two days has
     # not been working for two days.
     started = datetime.now(UTC)
+
+    def live() -> MatterState:
+        """The state as it is now, not as it was when the notifier was built.
+
+        `cmd_run` reloads the state under the lock, so the object this closure
+        was handed goes stale the moment the run starts -- and a bar measured
+        from it would sit at zero for the whole run, which is exactly the lie
+        the bar exists to prevent. The runner saves after every step, so the
+        file is the live truth.
+        """
+        try:
+            return state_module.load(dossier.state_path)
+        except Exception:  # mid-write, or unreadable: the stale copy still counts
+            return state
+
     notifier = SessionNotifier(
         target.session_key,
         settings.resolve_openclaw_bin(),
@@ -539,9 +554,9 @@ def _attach_notifier(
         interval_s=int(getattr(args, "notify_interval", None) or settings.notify_interval_s),
         matter=dossier.slug,
         progress=lambda: progress.measure(
-            state, playbook, settings, settings.dossiers_path, since=started
+            live(), playbook, settings, settings.dossiers_path, since=started
         ),
-        plan=lambda record: _plan_lines(record, state, playbook, settings),
+        plan=lambda record: _plan_lines(record, live(), playbook, settings),
     )
     events.subscribe(notifier.on_event)
     return notifier
