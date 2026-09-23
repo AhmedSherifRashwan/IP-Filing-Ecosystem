@@ -145,29 +145,38 @@ had a session key has none stored.)
 
 ## 6. When it finishes (Gate 3 reached)
 
-The Gate 3 update is the findings report. Read the brief with the `read` tool
-and give the substance in one reply: what the two independent reviewers agreed
-on (consensus findings) versus what only one raised, what remains open, which
-gates were auto-accepted, and the package paths in `07-package/` (abstract,
-description, figures, claims, support matrix, machine support check, filing
-checklist, gate decisions, cover memo) plus the evidence pack under
-`evidence/`. Say once, plainly, that the package is a draft for counsel to
-review and sign off, not a filing.
+The Gate 3 update is the findings report. Read `findings-report.md` in the
+package with the `read` tool and give the substance in one reply: the counts by
+severity, the critical findings in a sentence each, what the two reviewers
+agreed on, which gates were auto-accepted, and what the review could not see.
+
+Then give the paths, plainly:
+
+- **Read this first:** `dossiers/<slug>/07-package/v<N>-<date>/readable/findings-report.pdf`
+  (Word: `findings-report.docx`)
+- **Send to counsel:** everything else in `readable/` — cover memo, abstract,
+  claims, description, figures, filing checklist, support matrix, gate answers,
+  residual findings, all as PDF and Word
+- **The record:** the same documents as markdown in the package folder, the
+  evidence pack in `dossiers/<slug>/evidence/`
+
+Say once, plainly, that the package is a draft for counsel to review and sign
+off, not a filing.
+
+If the person wants the findings report at any other moment — mid-run, or after
+a stop — it costs nothing and needs no model call:
+
+```bash
+/opt/homebrew/bin/uv run ipfe report --matter <slug>
+```
 
 Then offer the **inventor interview**: an unattended run answered no Gate 1
 questions, and the disclosure is the one thing that improves everything
-downstream. Run
-
-```bash
-/opt/homebrew/bin/uv run ipfe questions \
-  --matter <slug> --top 10
-```
-
-and put those ten questions to the person in one message, numbered, with the
-one-line `why` each. Collect their answers **verbatim** (unanswered ones stay
-unanswered — never fill them in), file them with `ipfe intake --matter <slug>
---kind answers --stdin` exactly as in section 2, and relaunch a second pass
-from Phase 2 (or Phase 1 if an answer changes what the invention is):
+downstream. Run `ipfe questions --matter <slug> --top 10`, put those ten
+questions to the person in one message, numbered, with the one-line `why` each.
+Collect their answers **verbatim** (unanswered ones stay unanswered — never
+fill them in), file them with `ipfe intake --matter <slug> --kind answers
+--stdin` exactly as in section 2, and relaunch a second pass from Phase 2:
 
 ```bash
 cd /Users/ahmed/IP-Filing-Ecosystem && /opt/homebrew/bin/uv run ipfe run \
@@ -175,6 +184,14 @@ cd /Users/ahmed/IP-Filing-Ecosystem && /opt/homebrew/bin/uv run ipfe run \
 ```
 
 The second pass opens new versions; nothing from the first pass is overwritten.
+
+## Stopping and forcing a report
+
+- `ipfe stop --matter <slug>` stops a background run; the dossier is kept and
+  `ipfe run` resumes from the cursor.
+- `ipfe deliver --matter <slug>` builds the whole package now from the latest
+  artefacts, converged or not, and discloses what was skipped. Use it when the
+  person wants the report rather than another cycle.
 
 ## 7. Prior-art search (opt-in only)
 

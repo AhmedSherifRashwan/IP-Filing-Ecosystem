@@ -31,6 +31,7 @@ from ecosystem import state as state_module
 from ecosystem.calls import section_body
 from ecosystem.contracts import Finding, deliverable_only
 from ecosystem.dossier import Dossier, sha256_text, split_frontmatter
+from ecosystem.export import export_markdown
 from ecosystem.loopback import SEVERE, load_findings
 from ecosystem.state import MatterState
 from ecosystem.support_check import check_support
@@ -308,11 +309,47 @@ def build_final_package(
         "requires": _CONTACT_SENTENCE,
         "members": members,
     }
+    manifest["readable"] = export_readable(target, state)
     (target / "MANIFEST.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     # Last, so the pack hashes the finished manifest as well as the members.
     anchor_evidence(dossier, state, target)
     return target
+
+
+# Documents a person actually opens, in the order they should read them.
+READABLE: Final[tuple[tuple[str, str], ...]] = (
+    ("findings-report.md", "Independent review findings"),
+    ("cover-memo.md", "Cover memo for counsel"),
+    ("abstract.md", "Abstract"),
+    ("claims.md", "Claims"),
+    ("description.md", "Description"),
+    ("figures.md", "Figures and reference numerals"),
+    ("filing-checklist.md", "Filing checklist"),
+    ("support-matrix.md", "Claim-to-specification support matrix"),
+    ("gate-14.md", "Fourteen-question filing gate"),
+    ("residual-findings.md", "Residual findings"),
+)
+
+
+def export_readable(target: Path, state: MatterState) -> dict[str, list[str]]:
+    """Render the package as Word and PDF beside the markdown, in `readable/`.
+
+    The markdown is the record; these are what gets read and sent. A format
+    that fails to render is logged and skipped, never fatal: a missing PDF must
+    not cost anybody the package it was made from.
+    """
+    written: dict[str, list[str]] = {"word": [], "pdf": []}
+    prefix = state.matter.title or ""
+    for name, label in READABLE:
+        source = target / name
+        if not source.is_file():
+            continue
+        title = f"{prefix} — {label}" if prefix else label
+        for path in export_markdown(source, target / "readable", title=title):
+            written["pdf" if path.suffix == ".pdf" else "word"].append(path.name)
+    log.info("readable exports: %d Word, %d PDF", len(written["word"]), len(written["pdf"]))
+    return written
 
 
 def write_cover_memo(dossier: Dossier, package_dir: Path, text: str) -> Path:

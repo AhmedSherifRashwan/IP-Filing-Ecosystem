@@ -31,13 +31,14 @@ from typing import Any, Final
 from ecosystem import evidence as evidence_module
 from ecosystem import gates as gates_module
 from ecosystem import ledger as ledger_module
-from ecosystem import loopback, package
+from ecosystem import loopback, package, report
 from ecosystem import questions as questions_module
 from ecosystem import state as state_module
 from ecosystem import support_check as support_module
 from ecosystem.calls import ContractFailed, TerminologyBlocked
 from ecosystem.config import AGENT_IDS, PHASES, Settings
 from ecosystem.dossier import Dossier, DossierError, InputContext, MissingInput
+from ecosystem.export import export_markdown
 from ecosystem.log import EventLog
 from ecosystem.notify import SessionNotifier
 from ecosystem.playbook import PlaybookError, load_playbook
@@ -186,6 +187,12 @@ def build_parser() -> argparse.ArgumentParser:
     deliver.add_argument("--fixtures", help="replay directory for --transport fake")
     deliver.add_argument("--notify", metavar="SESSION_KEY", help="push progress into this session")
 
+    report_cmd = sub.add_parser(
+        "report", help="build the findings report (markdown, Word and PDF) from the latest review"
+    )
+    report_cmd.add_argument("--matter", required=True)
+    report_cmd.add_argument("--out", help="directory for the report (default: the dossier root)")
+
     status = sub.add_parser("status", help="where the matter is and what it needs")
     status.add_argument("--matter", required=True)
     status.add_argument("--json", dest="as_json", action="store_true")
@@ -274,6 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         "intake": cmd_intake,
         "stop": cmd_stop,
         "deliver": cmd_deliver,
+        "report": cmd_report,
         "prompt": cmd_prompt,
         "show": cmd_show,
         "package": cmd_package,
@@ -649,6 +657,32 @@ def cmd_deliver(args: argparse.Namespace) -> int:
             notifier.close()
     _print_stop(reason, dossier, state, settings)
     return _STOP_EXIT[reason]
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    """Build the findings report from the latest review. No model calls, no lock."""
+    settings = _settings(args)
+    dossier, state, _events = _open(settings, args.matter)
+    review = dossier.latest("REVIEW") or _newest_readable_review(dossier)
+    if review is None:
+        return _fail(EXIT["precondition"], f"no review has run yet for {args.matter}")
+    out_dir = Path(args.out).expanduser() if args.out else dossier.root
+    target = out_dir / "findings-report.md"
+    member = report.build_findings_report(dossier, state, review.path, target)
+    print(f"{member['findings']} findings -> {target}")
+    print(f"  {member['counts']}")
+    title = f"{state.matter.title or dossier.slug} — independent review findings"
+    for path in export_markdown(target, out_dir / "readable", title=title):
+        print(f"  {path}")
+    return EXIT["ok"]
+
+
+def _newest_readable_review(dossier: Dossier) -> Any:
+    """The newest review version with findings, complete or not."""
+    for version in dossier.readable_versions_desc("REVIEW", include_running=True):
+        if (version.path / "findings.json").is_file():
+            return version
+    return None
 
 
 def cmd_status(args: argparse.Namespace) -> int:

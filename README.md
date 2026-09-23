@@ -135,6 +135,20 @@ chat in batches — about once a minute (`--notify-interval`), and immediately
 for a gate, a cap, a failure or a pause. `ipfe status` prints the last dozen
 lines under `recent`.
 
+## Reports you can open
+
+Every package writes `findings-report.md`: the counts by area and severity,
+then every critical and high finding in full — what it attacks, which claim and
+paragraph, who raised it, and the least narrowing fix — then the medium and low
+ones in a table, then an honest statement of what the review could not see.
+Alongside it, `readable/` holds the same report and the other documents that
+get read (cover memo, abstract, claims, description, figures, checklist,
+support matrix, gate answers, residual findings) as **Word and PDF**, rendered
+by `python-docx` and `reportlab` with no system tools involved.
+
+`ipfe report --matter X` builds the report on its own, from the latest review,
+with no model calls — so it works mid-run and cannot fail the way drafting can.
+
 ## The run always reaches a package
 
 The review is bounded, not chased to zero. Two reviewers over twelve prompts
