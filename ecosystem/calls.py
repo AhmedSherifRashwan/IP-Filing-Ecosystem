@@ -48,6 +48,7 @@ from ecosystem.terminology import LockedTable, TermReport, Violation, append_dri
 from ecosystem.transport import (
     AutoTransport,
     CallRequest,
+    GatewayError,
     GatewayRateLimited,
     GatewayReply,
     Transport,
@@ -382,7 +383,7 @@ class Caller:
         self.state.bump("calls")
 
         try:
-            reply = self._send(result, prompt_path, assembled.text, spec.timeout_s)
+            reply = self._send_with_fallbacks(result, spec, prompt_path, assembled.text)
         except Exception as exc:
             run.status = "failed"
             run.error = f"{type(exc).__name__}: {exc}"
@@ -394,7 +395,14 @@ class Caller:
                 call_id=call_id,
                 error=run.error,
             )
-            raise
+            # A provider that would not answer is not a reason to lose a run.
+            # The same ladder that handles an unusable reply handles an absent
+            # one: skip a revision, record a non-critical step as failed and
+            # carry on, stop only for a step nothing can replace.
+            settled = self._fallback(result, spec, ctx, run, exc)
+            if settled is None:
+                raise
+            return settled
 
         reply = self._retry_defective(result, spec, prompt_path, assembled.text, reply)
         result.reply_text = reply.text
@@ -462,6 +470,40 @@ class Caller:
         result.idempotency_key = f"{base_idem}:{tag}"
         result.prefer_gateway = True
 
+    def _send_with_fallbacks(
+        self, result: CallResult, spec: PromptSpec, prompt_path: Path, text: str
+    ) -> GatewayReply:
+        """Send, and if the analysis tier will not answer, use the agent's own model.
+
+        Model tiering is an economy, not a requirement: when the second provider
+        is unreachable the step is still worth doing on the first one. Falling
+        back costs tokens and says so in the ticker; failing would cost the run.
+        """
+        try:
+            return self._send(result, prompt_path, text, spec.timeout_s)
+        except GatewayError as exc:
+            if not result.requested_model:
+                raise
+            log.warning(
+                "tier model %s unavailable for %s (%s); falling back to %s's own model",
+                result.requested_model,
+                result.call_id,
+                exc,
+                result.agent_id,
+            )
+            self.events.emit(
+                "tier_fallback",
+                phase=spec.phase,
+                prompt=spec.id,
+                call_id=result.call_id,
+                requested_model=result.requested_model,
+                error=str(exc)[:200],
+            )
+            result.requested_model = None
+            result.transport = ""
+            self._fresh_session(result, "tier")
+            return self._send(result, prompt_path, text, spec.timeout_s)
+
     def _retry_defective(
         self,
         result: CallResult,
@@ -503,7 +545,7 @@ class Caller:
         spec: PromptSpec,
         ctx: AttemptContext,
         run: AgentRun,
-        error: ContractFailed,
+        error: Exception,
     ) -> CallResult | None:
         """What happens when a reply never follows the contract.
 
@@ -515,6 +557,24 @@ class Caller:
         critical = spec.id in getattr(self.settings, "critical_prompts", CRITICAL_PROMPTS)
         if critical:
             return None
+        message = getattr(error, "message", None) or str(error)
+        if not result.reply_text:
+            # Nothing came back at all, so there is nothing to keep. The step is
+            # recorded as failed -- which advances the bar and shows in the
+            # ticker -- and the run goes on without it.
+            run.status = "failed"
+            run.error = f"{type(error).__name__}: {message}"
+            run.finished_at = _now()
+            result.skipped = True
+            self.events.emit(
+                "revision_skipped" if spec.id in REVISION_PROMPTS else "output_partial",
+                phase=spec.phase,
+                prompt=spec.id,
+                call_id=result.call_id,
+                error=message,
+            )
+            self.state.bump("steps_lost")
+            return result
         run.finished_at = _now()
         result.attempts = max(result.attempts, 1)
         if spec.id in REVISION_PROMPTS:
@@ -525,7 +585,7 @@ class Caller:
                 phase=spec.phase,
                 prompt=spec.id,
                 call_id=result.call_id,
-                error=error.message,
+                error=message,
             )
             self.state.bump("revisions_skipped")
             return result
@@ -538,13 +598,13 @@ class Caller:
             phase=spec.phase,
             prompt=spec.id,
             call_id=result.call_id,
-            error=error.message,
+            error=message,
         )
         self.state.bump("outputs_partial")
         return result
 
     def _write_partial(
-        self, result: CallResult, spec: PromptSpec, ctx: AttemptContext, error: ContractFailed
+        self, result: CallResult, spec: PromptSpec, ctx: AttemptContext, error: Exception
     ) -> None:
         frontmatter: dict[str, Any] = {
             "matter": self.dossier.slug,
@@ -568,7 +628,7 @@ class Caller:
                 {
                     "id": "Q-RUNNER",
                     "text": "This reply did not follow the output contract after a "
-                    f"correction turn and a fresh attempt ({error.message}). The raw reply "
+                    f"correction turn and a fresh attempt ({error}). The raw reply "
                     "is kept verbatim; treat every statement in it as unverified.",
                     "blocks": [],
                 }

@@ -150,7 +150,8 @@ def assemble(
     ctx.phase = ctx.phase or spec.phase
     ctx.prompt_id = ctx.prompt_id or spec.id
 
-    required, missing_required = _resolve(dossier, spec.inputs, ctx, True, tolerate_missing)
+    lost = lost_steps(state)
+    required, missing_required = _resolve(dossier, spec.inputs, ctx, True, tolerate_missing, lost)
     optional, _ = _resolve(dossier, spec.optional_inputs, ctx, False, tolerate_missing)
 
     leading = list(extra_inputs or [])
@@ -271,12 +272,36 @@ _TERMINOLOGY_PREAMBLE: Final[str] = (
 )
 
 
+def lost_steps(state: MatterState) -> set[str]:
+    """Steps that ran and produced nothing: failed, or skipped after failing.
+
+    Their absence is a fact of the run, not a broken dossier, so a later step
+    that reads them is told what happened instead of the run being stopped.
+    """
+    return {
+        f"out:{run.phase}/{run.prompt}"
+        for run in state.agent_runs
+        if run.status in {"failed", "skipped"}
+    }
+
+
+def _absence_note(spec: str) -> ResolvedInput:
+    text = (
+        f"This input is missing: the step that produces `{spec}` failed and the run "
+        "continued without it. Do not guess at what it would have said. Work from the "
+        "material you do have, say in your Open Questions that this input was absent, "
+        "and mark anything that depended on it as unverified."
+    )
+    return ResolvedInput(spec=spec, path=None, text=text, sha256="", chars=len(text), kind="absent")
+
+
 def _resolve(
     dossier: Dossier,
     specs: list[str],
     ctx: InputContext,
     required: bool,
     tolerate_missing: bool,
+    lost: set[str] | None = None,
 ) -> tuple[list[ResolvedInput], list[str]]:
     resolved: list[ResolvedInput] = []
     missing: list[str] = []
@@ -284,6 +309,10 @@ def _resolve(
         try:
             resolved.extend(dossier.resolve_input(spec, ctx, required=required))
         except MissingInput:
+            if required and spec in (lost or set()):
+                log.warning("required input %s is absent: its step failed", spec)
+                resolved.append(_absence_note(spec))
+                continue
             if required and not tolerate_missing:
                 raise
             missing.append(spec)

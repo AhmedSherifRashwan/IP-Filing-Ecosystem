@@ -89,6 +89,7 @@ _NOTIFIED: Final[frozenset[str]] = frozenset(
         "search_unavailable",
         "quota_wait",
         "quota_resumed",
+        "tier_fallback",
         "run_failed",
         "run_stopped",
     }
@@ -241,6 +242,11 @@ def ticker_line(
         )
     if event == "loopback_cap_reached":
         return f"REVIEW REQUIRED · loop-back cap on {detail.get('category')} · run blocked"
+    if event == "tier_fallback":
+        return (
+            f"{step} · {detail.get('requested_model')} would not answer, "
+            f"retrying on the agent's own model"
+        )
     if event == "quota_wait":
         minutes = max(1, int(detail.get("wait_s") or 0) // 60)
         return f"paused · provider limit, waiting ~{minutes}m, will resume by itself"

@@ -166,6 +166,16 @@ converged or not, and discloses what was skipped. `ipfe status` reports
 
 ## Resilience
 
+One blip never ends a run that could have continued. A failed token refresh is
+retried rather than treated as a verdict. If the analysis-tier model will not
+answer, the step is re-run on the agent's own model — the tier is an economy,
+not a requirement. If a provider never answers at all, the step is recorded as
+failed, the bar advances and the run goes on; a later step that needed its
+output is told the input is absent and asked to say so, rather than the run
+being stopped. Only the handful of steps nothing can replace (the disclosure,
+the terminology, the description, the claims, the abstract) can stop a run.
+
+
 An unattended run is built to finish. Large prompts take the gateway path
 (the CLI path can return only the tail of a long answer); an empty or
 head-truncated reply is retried in a fresh session; a reply that breaks the

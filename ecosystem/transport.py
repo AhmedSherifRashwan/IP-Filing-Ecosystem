@@ -95,6 +95,11 @@ _ERROR_SIGNATURES: Final[tuple[tuple[str, type[GatewayError]], ...]] = (
     ("quota", GatewayRateLimited),
     ("credit balance", GatewayRateLimited),
     ("usage limit", GatewayRateLimited),
+    # A refresh that failed is a moment, not a verdict: the credential is still
+    # there and the next attempt usually gets a fresh token. A rejected
+    # credential says "unauthorized" and stays below.
+    ("auth refresh", GatewayTransientError),
+    ("refresh request failed", GatewayTransientError),
     ("unauthorized", GatewayAuthError),
     ("forbidden", GatewayAuthError),
     ("invalid token", GatewayAuthError),
